@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="it" data-bs-theme="dark">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>COMET LOGISTICA PRO</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://cdn.datatables.net/1.13.4/css/dataTables.bootstrap5.min.css" rel="stylesheet">
+    <style>
+        body {
+            background: #0d1117;
+            font-family: system-ui, sans-serif;
+        }
+        
+        #sidebar {
+            width: 240px;
+            min-height: 100vh;
+            background: #161b22;
+            border-right: 1px solid rgba(255, 255, 255, .07);
+            position: sticky;
+            top: 0;
+        }
+        
+        .sb-brand {
+            padding: 1.2rem 1rem;
+            border-bottom: 1px solid rgba(255, 255, 255, .07);
+        }
+        
+        .sb-link {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            color: rgba(255, 255, 255, .6);
+            text-decoration: none;
+            font-size: .85rem;
+            border-left: 3px solid transparent;
+            transition: .15s;
+        }
+        
+        .sb-link:hover,
+        .sb-link.active {
+            color: #fff;
+            background: rgba(47, 129, 247, .1);
+            border-left-color: #2f81f7;
+        }
+        
+        .sb-section {
+            font-size: .62rem;
+            color: rgba(255, 255, 255, .25);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            padding: 12px 16px 4px;
+        }
+        
+        .topbar {
+            background: #161b22;
+            border-bottom: 1px solid rgba(255, 255, 255, .07);
+            padding: 10px 20px;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .kpi {
+            background: #161b22;
+            border: 1px solid rgba(255, 255, 255, .07);
+            border-radius: 12px;
+            padding: 1.2rem;
+        }
+        
+        .kpi-num {
+            font-size: 2rem;
+            font-weight: 700;
+        }
+        
+        .kpi-label {
+            font-size: .75rem;
+            color: rgba(255, 255, 255, .4);
+            text-transform: uppercase;
+        }
+        
+        [id^="view-"] {
+            display: none;
+        }
+        
+        .active-view {
+            display: block !important;
+        }
+        
+        .alert-bar {
+            padding: 8px 12px;
+            border-radius: 8px;
+            margin-bottom: 6px;
+            font-size: .82rem;
+        }
+        
+        .alert-bar.danger {
+            background: rgba(248, 81, 73, .1);
+            color: #f85149;
+            border: 1px solid rgba(248, 81, 73, .2);
+        }
+        
+        .alert-bar.warning {
+            background: rgba(210, 153, 34, .1);
+            color: #d29922;
+            border: 1px solid rgba(210, 153, 34, .2);
+        }
+        
+        #ai-panel {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 999;
+        }
+        
+        .ai-btn {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #2f81f7, #6e40c9);
+            border: none;
+            color: #fff;
+            font-size: 1.2rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-left: auto;
+            box-shadow: 0 4px 20px rgba(47, 129, 247, .4);
+        }
+        
+        .ai-box {
+            background: #161b22;
+            border: 1px solid rgba(255, 255, 255, .1);
+            border-radius: 14px;
+            width: 340px;
+            height: 420px;
+            display: none;
+            flex-direction: column;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, .5);
+            overflow: hidden;
+        }
+        
+        .ai-box.open {
+            display: flex;
+        }
+        
+        .ai-head {
+            padding: 10px 14px;
+            border-bottom: 1px solid rgba(255, 255, 255, .07);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .ai-msgs {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        
+        .ai-msg {
+            padding: 7px 10px;
+            border-radius: 8px;
+            font-size: .8rem;
+            max-width: 85%;
+        }
+        
+        .ai-msg.user {
+            background: #2f81f7;
+            color: #fff;
+            align-self: flex-end;
+        }
+        
+        .ai-msg.bot {
+            background: #1c2333;
+            color: #e6edf3;
+            align-self: flex-start;
+        }
+        
+        .ai-foot {
+            padding: 8px;
+            border-top: 1px solid rgba(255, 255, 255, .07);
+            display: flex;
+            gap: 6px;
+        }
+        
+        .ai-foot input {
+            flex: 1;
+            background: #1c2333;
+            border: 1px solid rgba(255, 255, 255, .1);
+            border-radius: 8px;
+            padding: 6px 10px;
+            color: #e6edf3;
+            font-size: .8rem;
+        }
+        
+        .ai-foot button {
+            background: #2f81f7;
+            border: none;
+            border-radius: 8px;
+            padding: 6px 12px;
+            color: #fff;
+            cursor: pointer;
+        }
+    </style>
+</head>
+
+<body>
+    <script>
+        (function() {
+            const token = localStorage.getItem('comet_token');
+            if (!token) {
+                window.location.href = '/login.html';
+                return;
+            }
+            const orig = window.fetch;
+            window.fetch = function(url, opts) {
+                opts = opts || {};
+                opts.headers = opts.headers || {};
+                opts.headers['Authorization'] = 'Bearer ' + (localStorage.getItem('comet_token') || '');
+                return orig.call(this, url, opts).then(r => {
+                    if (r.status === 401) {
+                        localStorage.clear();
+                        window.location.href = '/login.html';
+                    }
+                    return r;
+                });
+            };
+        })();
+    </script>
+
+    <div class="d-flex">
+        <!-- SIDEBAR -->
+        <nav id="sidebar">
+            <div class="sb-brand">
+                <div class="d-flex align-items-center gap-2">
+                    <span style="font-size:1.4rem">🚛</span>
+                    <div>
+                        <div style="font-weight:700;color:#e6edf3;font-size:.9rem">COMET</div>
+                        <div style="font-size:.65rem;color:rgba(255,255,255,.3)">LOGISTICA PRO</div>
+                    </div>
+                </div>
+            </div>
+            <div class="sb-section">Operativo</div>
+            <a href="#" class="sb-link active" onclick="showTab('dashboard')"><i class="fas fa-gauge-high fa-fw"></i> Dashboard</a>
+            <a href="#" class="sb-link" onclick="showTab('flotta')"><i class="fas fa-truck fa-fw"></i> Flotta</a>
+            <a href="#" class="sb-link" onclick="showTab('magazzino')"><i class="fas fa-boxes-stacked fa-fw"></i> Magazzino</a>
+            <a href="#" class="sb-link" onclick="showTab('planning')"><i class="fas fa-calendar fa-fw"></i> Planning</a>
+            <div class="sb-section">Logistica</div>
+            <a href="#" class="sb-link" onclick="showTab('epal')"><i class="fas fa-pallet fa-fw"></i> EPAL</a>
+            <a href="#" class="sb-link" onclick="showTab('navi')"><i class="fas fa-ship fa-fw"></i> Navi</a>
+            <a href="#" class="sb-link" onclick="showTab('autisti')"><i class="fas fa-id-card fa-fw"></i> Autisti</a>
+            <div class="sb-section">Sistema</div>
+            <a href="#" class="sb-link" onclick="showTab('config')"><i class="fas fa-gear fa-fw"></i> Config</a>
+            <a href="#" class="sb-link" onclick="logout()" style="margin-top:auto"><i class="fas fa-sign-out-alt fa-fw"></i> Esci (<span id="user-label"></span>)</a>
+        </nav>
+
+        <!-- MAIN -->
+        <div class="flex-grow-1">
+            <div class="topbar d-flex align-items-center gap-3">
+                <span style="font-weight:600;color:#e6edf3" id="page-title">Dashboard</span>
+                <button class="btn btn-sm btn-outline-secondary ms-auto" onclick="loadAll()">
+        <i class="fas fa-rotate"></i> Aggiorna
+      </button>
+            </div>
+
+            <div class="p-4">
+                <!-- DASHBOARD -->
+                <div id="view-dashboard" class="active-view">
+                    <div class="row g-3 mb-4">
+                        <div class="col-6 col-md-3">
+                            <div class="kpi">
+                                <div class="kpi-num text-primary" id="kpi-r">—</div>
+                                <div class="kpi-label">Rimorchi</div>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <div class="kpi">
+                                <div class="kpi-num text-success" id="kpi-c">—</div>
+                                <div class="kpi-label">Carichi</div>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <div class="kpi">
+                                <div class="kpi-num text-warning" id="kpi-m">—</div>
+                                <div class="kpi-label">Magazzino</div>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <div class="kpi">
+                                <div class="kpi-num text-danger" id="kpi-a">—</div>
+                                <div class="kpi-label">Alert</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="alerts-box"></div>
+                </div>
+
+                <!-- FLOTTA -->
+                <div id="view-flotta">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h5 class="mb-0 text-light">Flotta Rimorchi</h5>
+                        <button class="btn btn-primary btn-sm" onclick="showModal('modal-rimorchio')"><i class="fas fa-plus me-1"></i>Nuovo</button>
+                    </div>
+                    <table id="tbl-r" class="table table-dark table-hover">
+                        <thead>
+                            <tr>
+                                <th>Targa</th>
+                                <th>Tipo</th>
+                                <th>Stato</th>
+                                <th>Posizione</th>
+                                <th>Autista</th>
+                                <th>Destinatario</th>
+                                <th>Azioni</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbody-r"></tbody>
+                    </table>
+                </div>
+
+                <!-- MAGAZZINO -->
+                <div id="view-magazzino">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h5 class="mb-0 text-light">Magazzino</h5>
+                        <button class="btn btn-primary btn-sm" onclick="showModal('modal-magazzino')"><i class="fas fa-plus me-1"></i>Aggiungi</button>
+                    </div>
+                    <table id="tbl-m" class="table table-dark table-hover">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Materiale</th>
+                                <th>Cliente</th>
+                                <th>Destinazione</th>
+                                <th>KG</th>
+                                <th>Stato</th>
+                                <th>Tassativa</th>
+                                <th>Azioni</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbody-m"></tbody>
+                    </table>
+                </div>
+
+                <!-- PLANNING -->
+                <div id="view-planning">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h5 class="mb-0 text-light">Planning</h5>
+                        <button class="btn btn-primary btn-sm" onclick="showModal('modal-planning')"><i class="fas fa-plus me-1"></i>Nuovo</button>
+                    </div>
+                    <table id="tbl-p" class="table table-dark table-hover">
+                        <thead>
+                            <tr>
+                                <th>Data</th>
+                                <th>Rimorchio</th>
+                                <th>Autista</th>
+                                <th>Destinazione</th>
+                                <th>KG</th>
+                                <th>Stato</th>
+                                <th>Azioni</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbody-p"></tbody>
+                    </table>
+                </div>
+
+                <!-- EPAL -->
+                <div id="view-epal">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h5 class="mb-0 text-light">Ledger EPAL</h5>
+                        <button class="btn btn-primary btn-sm" onclick="showModal('modal-epal')"><i class="fas fa-plus me-1"></i>Movimento</button>
+                    </div>
+                    <table id="tbl-e" class="table table-dark table-hover">
+                        <thead>
+                            <tr>
+                                <th>Data</th>
+                                <th>Tipo</th>
+                                <th>Luogo</th>
+                                <th>Quantità</th>
+                                <th>Autista/Targa</th>
+                                <th>Note</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbody-e"></tbody>
+                    </table>
+                </div>
+
+                <!-- NAVI -->
+                <div id="view-navi">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h5 class="mb-0 text-light">Tratte Navi</h5>
+                        <button class="btn btn-primary btn-sm" onclick="showModal('modal-nave')"><i class="fas fa-plus me-1"></i>Nuova</button>
+                    </div>
+                    <table id="tbl-n" class="table table-dark table-hover">
+                        <thead>
+                            <tr>
+                                <th>Nave</th>
+                                <th>Partenza</th>
+                                <th>Arrivo</th>
+                                <th>ETD</th>
+                                <th>ETA</th>
+                                <th>Stato</th>
+                                <th>Azioni</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbody-n"></tbody>
+                    </table>
+                </div>
+
+                <!-- AUTISTI -->
+                <div id="view-autisti">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h5 class="mb-0 text-light">Autisti</h5>
+                        <button class="btn btn-primary btn-sm" onclick="showModal('modal-autista')"><i class="fas fa-plus me-1"></i>Nuovo</button>
+                    </div>
+                    <table id="tbl-a" class="table table-dark table-hover">
+                        <thead>
+                            <tr>
+                                <th>Cognome</th>
+                                <th>Targa Mezzo</th>
+                                <th>Scad. Assicurazione</th>
+                                <th>Note</th>
+                                <th>Azioni</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbody-a"></tbody>
+                    </table>
+                </div>
+
+                <!-- CONFIG -->
+                <div id="view-config">
+                    <h5 class="mb-3 text-light">Configurazione</h5>
+                    <div class="card bg-dark border-secondary" style="max-width:500px">
+                        <div class="card-body">
+                            <div class="mb-3"><label class="form-label text-light">Giorni preavviso scadenze</label>
+                                <input class="form-control bg-dark text-light border-secondary" id="cfg-ALERT_SCADENZE_GIORNI"></div>
+                            <div class="mb-3"><label class="form-label text-light">Peso max default (kg)</label>
+                                <input class="form-control bg-dark text-light border-secondary" id="cfg-MAX_KG_DEFAULT"></div>
+                            <div class="mb-3"><label class="form-label text-light">Giorni avviso magazzino</label>
+                                <input class="form-control bg-dark text-light border-secondary" id="cfg-MAGAZZINO_WARN_DAYS"></div>
+                            <button class="btn btn-primary" onclick="saveConfig()">Salva</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODALI -->
+    <div class="modal fade" id="modal-rimorchio" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content bg-dark">
+                <div class="modal-header border-secondary">
+                    <h5 class="modal-title text-light">Nuovo Rimorchio</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+                <div class="modal-body">
+                    <input class="form-control bg-dark text-light border-secondary mb-2" id="r-targa" placeholder="Targa *">
+                    <input class="form-control bg-dark text-light border-secondary mb-2" id="r-tipo" placeholder="Tipo (es. Centinato)">
+                    <input class="form-control bg-dark text-light border-secondary mb-2" id="r-note" placeholder="Note">
+                </div>
+                <div class="modal-footer border-secondary">
+                    <button class="btn btn-primary" onclick="salvaRimorchio()">Salva</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="modal-magazzino" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content bg-dark">
+                <div class="modal-header border-secondary">
+                    <h5 class="modal-title text-light">Aggiungi Merce</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+                <div class="modal-body">
+                    <input class="form-control bg-dark text-light border-secondary mb-2" id="mag-cliente" placeholder="Cliente *">
+                    <input class="form-control bg-dark text-light border-secondary mb-2" id="mag-materiale" placeholder="Materiale *">
+                    <input class="form-control bg-dark text-light border-secondary mb-2" id="mag-destinazione" placeholder="Destinazione">
+                    <input class="form-control bg-dark text-light border-secondary mb-2" id="mag-kg" placeholder="KG" type="number">
+                    <input class="form-control bg-dark text-light border-secondary mb-2" id="mag-tassativa" placeholder="Data tassativa" type="date">
+                </div>
+                <div class="modal-footer border-secondary">
+                    <button class="btn btn-primary" onclick="salvaMagazzino()">Salva</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="modal-autista" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content bg-dark">
+                <div class="modal-header border-secondary">
+                    <h5 class="modal-title text-light">Nuovo Autista</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+                <div class="modal-body">
+                    <input class="form-control bg-dark text-light border-secondary mb-2" id="aut-cognome" placeholder="Cognome *">
+                    <input class="form-control bg-dark text-light border-secondary mb-2" id="aut-targa" placeholder="Targa mezzo">
+                    <input class="form-control bg-dark text-light border-secondary mb-2" id="aut-note" placeholder="Note">
+                </div>
+                <div class="modal-footer border-secondary">
+                    <button class="btn btn-primary" onclick="salvaAutista()">Salva</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- AI PANEL -->
+    <div id="ai-panel">
+        <div class="ai-box" id="ai-box">
+            <div class="ai-head">
+                <span>🤖</span><strong style="color:#e6edf3;font-size:.85rem">COMET AI</strong>
+                <button onclick="toggleAI()" style="margin-left:auto;background:none;border:none;color:rgba(255,255,255,.4);cursor:pointer">✕</button>
+            </div>
+            <div class="ai-msgs" id="ai-msgs">
+                <div class="ai-msg bot">Ciao! Sono COMET AI. Come posso aiutarti?</div>
+            </div>
+            <div class="ai-foot">
+                <input type="text" id="ai-input" placeholder="Chiedi qualcosa..." onkeydown="if(event.key==='Enter')sendAI()">
+                <button onclick="sendAI()"><i class="fas fa-paper-plane"></i></button>
+            </div>
+        </div>
+        <button class="ai-btn mt-2" onclick="toggleAI()">🤖</button>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.0/dist/jquery.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.4/js/dataTables.bootstrap5.min.js"></script>
+    <script src="/js/app.js"></script>
+</body>
+
+</html>

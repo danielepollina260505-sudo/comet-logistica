@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="it">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>COMET LOGISTICA — Accesso</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        
+        body {
+            background: #0d1117;
+            font-family: system-ui, sans-serif;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .card {
+            background: #161b22;
+            border: 1px solid rgba(255, 255, 255, .08);
+            border-radius: 16px;
+            padding: 2.5rem;
+            width: 100%;
+            max-width: 380px;
+        }
+        
+        .logo {
+            text-align: center;
+            font-size: 2.5rem;
+            margin-bottom: 1rem;
+        }
+        
+        h1 {
+            color: #e6edf3;
+            text-align: center;
+            font-size: 1.3rem;
+            margin-bottom: .3rem;
+        }
+        
+        p {
+            color: rgba(255, 255, 255, .4);
+            text-align: center;
+            font-size: .8rem;
+            margin-bottom: 2rem;
+        }
+        
+        label {
+            display: block;
+            color: rgba(255, 255, 255, .6);
+            font-size: .82rem;
+            margin-bottom: .4rem;
+        }
+        
+        input {
+            width: 100%;
+            background: #1c2333;
+            border: 1px solid rgba(255, 255, 255, .1);
+            border-radius: 8px;
+            padding: .65rem .9rem;
+            color: #e6edf3;
+            font-size: .9rem;
+            margin-bottom: 1rem;
+            outline: none;
+        }
+        
+        input:focus {
+            border-color: #2f81f7;
+        }
+        
+        button {
+            width: 100%;
+            background: #2f81f7;
+            border: none;
+            border-radius: 8px;
+            padding: .75rem;
+            color: #fff;
+            font-size: .95rem;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: .5rem;
+        }
+        
+        button:hover {
+            background: #388bfd;
+        }
+        
+        .error {
+            background: rgba(248, 81, 73, .1);
+            border: 1px solid rgba(248, 81, 73, .3);
+            border-radius: 8px;
+            color: #f85149;
+            padding: .75rem;
+            font-size: .82rem;
+            margin-bottom: 1rem;
+            display: none;
+        }
+        
+        .note {
+            color: rgba(255, 255, 255, .2);
+            font-size: .72rem;
+            text-align: center;
+            margin-top: 1.5rem;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="card">
+        <div class="logo">🚛</div>
+        <h1>COMET LOGISTICA PRO</h1>
+        <p>Accesso riservato</p>
+        <div class="error" id="err"></div>
+        <form id="form">
+            <label>Email aziendale</label>
+            <input type="email" id="email" placeholder="nome@gmail.com" required autofocus>
+            <label>Codice di accesso</label>
+            <input type="password" id="secret" placeholder="••••••••••" required>
+            <button type="submit" id="btn">Accedi</button>
+        </form>
+        <p class="note">🔒 Accesso limitato a utenti autorizzati</p>
+    </div>
+    <script>
+        document.getElementById('form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const btn = document.getElementById('btn');
+            const err = document.getElementById('err');
+            btn.textContent = 'Accesso in corso...';
+            btn.disabled = true;
+            err.style.display = 'none';
+            try {
+                const res = await fetch('/auth/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        email: document.getElementById('email').value,
+                        secret: document.getElementById('secret').value
+                    })
+                });
+                const data = await res.json();
+                if (data.ok) {
+                    localStorage.setItem('comet_token', data.token);
+                    localStorage.setItem('comet_email', data.email);
+                    window.location.href = '/';
+                } else {
+                    err.textContent = data.error || 'Accesso negato.';
+                    err.style.display = 'block';
+                }
+            } catch (ex) {
+                err.textContent = 'Errore di rete.';
+                err.style.display = 'block';
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Accedi';
+            }
+        });
+    </script>
+</body>
+
+</html>
