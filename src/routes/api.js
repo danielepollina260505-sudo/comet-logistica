@@ -59,18 +59,29 @@ router.post('/gas/getOperationalData', async(req, res) => {
     } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
 
-router.post('/gas/api_addRimorchio', async(req, res) => {
+router.post('/gas/api_askGemini', async(req, res) => {
     try {
         const p = req.body.payload || req.body || {};
-        const targa = String(p.Targa || p.targa || '').toUpperCase().replace(/\s+/g, '');
-        if (!targa) return res.status(400).json({ ok: false, error: 'Targa obbligatoria' });
-        await run(`INSERT INTO rimorchi (targa,tipo,stato,note) VALUES ($1,$2,$3,$4)
-      ON CONFLICT (targa) DO NOTHING`, [targa, p.Tipo || p.tipo || '', p.Stato || p.stato || 'VUOTO', p.Note || p.note || '']);
-        await audit(req.user ? .email, 'CREA_RIMORCHIO', { targa });
-        res.json({ ok: true, targa });
+        const prompt = p.prompt || p.testo || '';
+        if (!prompt) return res.json({ ok: false, error: 'Prompt vuoto' });
+        const apiKey = process.env.GEMINI_API_KEY;
+        if (!apiKey) return res.json({ ok: true, text: 'Chiave Gemini non configurata.' });
+        const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+        const response = await fetch(
+            'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+                body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }] })
+            }
+        );
+        const data = await response.json();
+        if (data.error) return res.json({ ok: false, error: data.error.message });
+        const text = (data.candidates && data.candidates[0] &&
+            data.candidates[0].content && data.candidates[0].content.parts &&
+            data.candidates[0].content.parts[0] && data.candidates[0].content.parts[0].text) || 'Nessuna risposta';
+        res.json({ ok: true, text: text });
     } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
-
 router.post('/gas/api_deleteRow', async(req, res) => {
     try {
         const p = req.body.payload || req.body || {};
