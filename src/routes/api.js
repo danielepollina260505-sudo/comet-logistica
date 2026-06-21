@@ -598,24 +598,23 @@ router.post('/gas/api_askGemini', async(req, res) => {
         const prompt = p.prompt || p.testo || '';
         if (!prompt) return res.json({ ok: false, error: 'Prompt vuoto' });
         const apiKey = process.env.GEMINI_API_KEY;
-        if (!apiKey) return res.json({ ok: true, text: '⚠️ Chiave Gemini non configurata.' });
+        if (!apiKey) return res.json({ ok: true, text: 'Chiave Gemini non configurata.' });
         const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
         const response = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+            'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey }: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
                 body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }] })
             }
         );
         const data = await response.json();
         if (data.error) return res.json({ ok: false, error: data.error.message });
-        const text = (data.candidates && data.candidates[0] && data.candidates[0].content &&
-            data.candidates[0].content.parts && data.candidates[0].content.parts[0] &&
-            data.candidates[0].content.parts[0].text) || 'Nessuna risposta';
-        res.json({ ok: true, text });
+        const text = (data.candidates && data.candidates[0] &&
+            data.candidates[0].content && data.candidates[0].content.parts &&
+            data.candidates[0].content.parts[0] && data.candidates[0].content.parts[0].text) || 'Nessuna risposta';
+        res.json({ ok: true, text: text });
     } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
-
 // ====================== STUB per funzioni non critiche ======================
 const stubs = [
     'api_getDriverActivity', 'api_getDriverDashboard', 'api_suggestDriverForTrailer',
