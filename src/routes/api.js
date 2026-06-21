@@ -190,7 +190,7 @@ router.post('/ai/ask', async(req, res) => {
         );
         const data = await response.json();
         if (data.error) return res.json({ ok: false, error: data.error.message });
-        const text = data ? .candidates ? .[0] ? .content ? .parts ? .[0] ? .text || 'Nessuna risposta';
+        const text = (data && data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts && data.candidates[0].content.parts[0] && data.candidates[0].content.parts[0].text) || 'Nessuna risposta';
         res.json({ ok: true, text });
     } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
