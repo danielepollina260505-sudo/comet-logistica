@@ -1,13 +1,15 @@
-'use strict';
+﻿'use strict';
 const express = require('express');
 const router = express.Router();
 const GAS_URL = process.env.GAS_URL;
 
 async function callGAS(action, payload) {
-  const res = await fetch(GAS_URL, {
+  const params = new URLSearchParams({ action: action });
+  const body = payload ? JSON.stringify(payload) : '{}';
+  const res = await fetch(GAS_URL + '?' + params.toString(), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action, payload: payload || {} })
+    body: body
   });
   const text = await res.text();
   try { return JSON.parse(text); } catch(e) { return { ok: false, error: text }; }
