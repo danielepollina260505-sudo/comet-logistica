@@ -47,7 +47,7 @@ router.post('/rimorchi', (req, res) => {
         if (!targa) return res.status(400).json({ ok: false, error: 'Targa mancante' });
         const t = targa.toUpperCase().replace(/\s+/g, '');
         run('INSERT INTO rimorchi (targa,tipo,stato,note) VALUES (?,?,?,?)', [t, tipo || '', stato || 'VUOTO', note || '']);
-        audit(req.user ? .email, 'CREA_RIMORCHIO', { targa: t });
+        audit(req.user && req.user.email, 'CREA_RIMORCHIO', { targa: t });
         res.json({ ok: true, targa: t });
     } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
 });
@@ -64,8 +64,12 @@ router.patch('/rimorchi/:targa', (req, res) => {
         ];
         const sets = [];
         const vals = [];
-        campi.forEach(c => { if (c in b) { sets.push(`${c}=?`);
-                vals.push(b[c]); } });
+        campi.forEach(c => {
+            if (c in b) {
+                sets.push(`${c}=?`);
+                vals.push(b[c]);
+            }
+        });
         if (!sets.length) return res.status(400).json({ ok: false, error: 'Nessun campo' });
         sets.push("updated_at=datetime('now')");
         run(`UPDATE rimorchi SET ${sets.join(',')} WHERE targa=?`, [...vals, targa]);
