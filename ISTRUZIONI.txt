@@ -1,0 +1,11 @@
+AGGIORNAMENTO COMET LOGISTICA
+==============================
+
+1. Copia public/index.html → nella tua cartella C:\comet-logistica\public\
+2. Copia public/js/client.js → nella tua cartella C:\comet-logistica\public\js\
+
+Poi nel terminale:
+  git add .
+  git commit -m "Aggiorna frontend con originale"
+  git push
+
