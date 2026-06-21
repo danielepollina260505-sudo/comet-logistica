@@ -1,18 +1,18 @@
 {
-  "name": "comet-logistica",
-  "version": "1.0.0",
-  "main": "src/server.js",
-  "scripts": {
-    "start": "node src/server.js"
-  },
-  "dependencies": {
-    "express": "^4.18.2",
-    "dotenv": "^16.3.1",
-    "helmet": "^7.1.0",
-    "compression": "^1.7.4",
-    "morgan": "^1.10.0",
-    "express-rate-limit": "^7.1.5",
-    "uuid": "^9.0.0",
-    "better-sqlite3": "^9.4.3"
-  }
+    "name": "comet-logistica",
+    "version": "1.0.0",
+    "main": "src/server.js",
+    "scripts": {
+        "start": "node src/server.js"
+    },
+    "dependencies": {
+        "express": "^4.18.2",
+        "dotenv": "^16.3.1",
+        "helmet": "^7.1.0",
+        "compression": "^1.7.4",
+        "morgan": "^1.10.0",
+        "express-rate-limit": "^7.1.5",
+        "uuid": "^9.0.0",
+        "sql.js": "^1.12.0"
+    }
 }
