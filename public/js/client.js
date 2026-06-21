@@ -6188,6 +6188,7 @@ function _renderImportPreview_(parsed) {
 }
 
 
+/*
  * - **grassetto**, *corsivo*, `codice`
  * - link in stile [testo](url) e URL "nudi" (es. link Google Maps) -> cliccabili
  * - elenchi puntati/numerati e intestazioni (#, ##, ...)
@@ -6316,4 +6317,5 @@ function submitOmnibarQuery() {
     .api_askGemini(query);
 }
 window.submitOmnibarQuery = submitOmnibarQuery;
+
 
