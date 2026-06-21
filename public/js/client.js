@@ -1,184 +1,8 @@
-/* ═══════════════════════════════════════════════════════════
-   GOOGLE SCRIPT ADAPTER — rimpiazza google.script.run
-   con chiamate fetch al server Express
-═══════════════════════════════════════════════════════════ */
-(function() {
-  const TOKEN = () => localStorage.getItem('comet_token') || '';
-
-  async function callApi(method, path, body) {
-    const opts = {
-      method,
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + TOKEN() }
-    };
-    if (body !== undefined) opts.body = JSON.stringify(body);
-    const res = await fetch('/api' + path, opts);
-    if (res.status === 401) { localStorage.clear(); location.href = '/login.html'; throw new Error('Non autenticato'); }
-    return res.json();
-  }
-
-  // Map: nome funzione GAS → funzione async che ritorna il risultato
-  const API_MAP = {
-    api_ping: () => callApi('GET', '/ping'),
-    getOperationalData: () => callApi('GET', '/data'),
-    api_getNavi: () => callApi('GET', '/navi'),
-    api_getConfig: () => callApi('GET', '/config'),
-    api_saveConfig: (cfg) => callApi('POST', '/config', cfg),
-
-    // Rimorchi
-    api_addRimorchio: (d) => callApi('POST', '/rimorchi', d),
-    api_deleteRow: (targa) => callApi('DELETE', '/rimorchi/' + targa),
-    api_cloneRimorchio: (targa) => callApi('POST', '/rimorchi/' + targa + '/clone', {}),
-    api_duplicateRow: (targa) => callApi('POST', '/rimorchi/' + targa + '/clone', {}),
-    api_inlineUpdate: (d) => callApi('PATCH', '/rimorchi/' + d.targa, d),
-    api_updateRimorchioFields: (d) => callApi('PATCH', '/rimorchi/' + d.targa, d),
-    api_updateTrailerDates: (d) => callApi('PATCH', '/rimorchi/' + d.targa, d),
-    api_updateCell: (d) => callApi('PATCH', '/rimorchi/' + d.targa, d),
-    api_setTrailerCargoManual: (d) => callApi('POST', '/rimorchi/' + d.targa + '/cargo', d),
-    api_startTrip: (d) => callApi('POST', '/rimorchi/' + d.targa + '/starttrip', d),
-    api_endTrip: (d) => callApi('POST', '/rimorchi/' + d.targa + '/endtrip', d),
-    api_startLayover: (d) => callApi('POST', '/rimorchi/' + d.targa + '/startlayover', d),
-    api_endLayover: (d) => callApi('POST', '/rimorchi/' + d.targa + '/endlayover', d),
-    api_unloadToWarehouse: (d) => callApi('POST', '/rimorchi/' + d.targa + '/unload', d),
-
-    // Autisti
-    api_getDriverRegistry: () => callApi('GET', '/autisti'),
-    api_upsertDriver: (d) => callApi('POST', '/autisti', d),
-    api_deleteDriver: (id) => callApi('DELETE', '/autisti/' + id),
-    api_assignDriverToTrailer: (d) => callApi('POST', '/autisti/assign', d),
-    api_unassignDriverFromTrailer: (d) => callApi('POST', '/autisti/unassign', d),
-    api_getDriverActivity: (d) => callApi('POST', '/autisti/activity', d),
-    api_getDriverDashboard: (d) => callApi('POST', '/autisti/dashboard', d),
-    api_suggestDriverForTrailer: (targa) => callApi('GET', '/autisti/suggest/' + targa),
-
-    // Magazzino
-    api_addMagazzinoItem: (d) => callApi('POST', '/magazzino', d),
-    deleteMagazzino: (id) => callApi('DELETE', '/magazzino/' + id),
-
-    // Navi
-    deleteNavi: (id) => callApi('DELETE', '/navi/' + id),
-    api_deleteNaveTrip: (id) => callApi('DELETE', '/navi/' + id),
-
-    // Planning
-    api_savePlanningItem: (d) => callApi('POST', '/planning', d),
-    deletePlanning: (id) => callApi('DELETE', '/planning/' + id),
-    api_deletePlanningItem: (id) => callApi('DELETE', '/planning/' + id),
-
-    // EPAL
-    api_addEpalMovement: (d) => callApi('POST', '/epal', d),
-    api_addLlfMovement: (d) => callApi('POST', '/lff', d),
-    api_addCvrMovement: (d) => callApi('POST', '/cvr', d),
-
-    // Rubrica
-    api_getRubricaIndirizzi: () => callApi('GET', '/rubrica'),
-    api_upsertRubricaIndirizzo: (d) => callApi('POST', '/rubrica', d),
-    api_deleteRubricaIndirizzo: (id) => callApi('DELETE', '/rubrica/' + id),
-
-    // AI / Gemini
-    api_askGemini: (d) => callApi('POST', '/ai/ask', d),
-    api_suggestLoadPairings: (d) => callApi('POST', '/ai/pairings', d),
-    api_optimizeStopOrder: (d) => callApi('POST', '/ai/optimize', d),
-    api_importMassivo: (d) => callApi('POST', '/ai/import', d),
-    api_buildWhatsappMessage: (d) => callApi('POST', '/ai/whatsapp', d),
-    api_buildWhatsappFromTrailer: (targa) => callApi('GET', '/ai/whatsapp/' + targa),
-    api_getTrailerReport: (targa) => callApi('GET', '/rimorchi/' + targa + '/report'),
-    api_sendFleetSummaryEmail: () => callApi('POST', '/email/fleet', {}),
-    api_sendDailyAlertsEmail: () => callApi('POST', '/email/alerts', {}),
-
-    // DDT
-    api_uploadDdt: (d) => callApi('POST', '/ddt/upload', d),
-    api_getDdtList: (targa) => callApi('GET', '/ddt/' + targa),
-    api_deleteDdt: (d) => callApi('DELETE', '/ddt/' + d.id),
-
-    // Impostazioni
-    api_getImpostazioni: () => callApi('GET', '/config'),
-    api_saveImpostazioni: (d) => callApi('POST', '/config', d),
-  };
-
-  // Builder pattern: google.script.run.withSuccessHandler(fn).withFailureHandler(fn).metodo(args)
-  function createRunner() {
-    let onSuccess = function() {};
-    let onFailure = function(e) { console.error('GAS adapter error:', e); };
-
-    const runner = {
-      withSuccessHandler: function(fn) { onSuccess = fn || function(){}; return runner; },
-      withFailureHandler: function(fn) { onFailure = fn || function(){}; return runner; },
-    };
-
-    // Aggiunge tutti i metodi dinamicamente
-    Object.keys(API_MAP).forEach(function(name) {
-      runner[name] = function(arg) {
-        Promise.resolve()
-          .then(() => API_MAP[name](arg))
-          .then(result => { try { onSuccess(result); } catch(e) { console.error(e); } })
-          .catch(err => { try { onFailure(err && err.message ? err.message : String(err)); } catch(e) { console.error(e); } });
-      };
-    });
-
-    return runner;
-  }
-
-  // Proxy per qualsiasi metodo non mappato (evita crash)
-  const handler = {
-    get: function(target, prop) {
-      if (prop === 'withSuccessHandler' || prop === 'withFailureHandler') {
-        return target[prop].bind(target);
-      }
-      if (typeof target[prop] === 'function') return target[prop].bind(target);
-      // Metodo non trovato — ritorna funzione che chiama onSuccess con {ok:false}
-      return function(arg) {
-        console.warn('[GAS adapter] Metodo non implementato:', prop, arg);
-        Promise.resolve({ ok: false, error: 'Non implementato: ' + prop })
-          .then(r => { try { target._succ(r); } catch(e) {} });
-      };
-    }
-  };
-
-  window.google = {
-    script: {
-      run: new Proxy({ 
-        withSuccessHandler: function(fn) { 
-          const r = createRunner(); 
-          r.withSuccessHandler(fn); 
-          return r; 
-        },
-        withFailureHandler: function(fn) {
-          const r = createRunner();
-          r.withFailureHandler(fn);
-          return r;
-        },
-        _succ: function(){}
-      }, {
-        get: function(target, prop) {
-          if (prop === 'withSuccessHandler' || prop === 'withFailureHandler') return target[prop].bind(target);
-          // Chiamata diretta senza handler: google.script.run.metodo()
-          if (API_MAP[prop]) {
-            return function(arg) {
-              API_MAP[prop](arg).catch(e => console.error('[GAS]', prop, e));
-            };
-          }
-          return function(arg) { console.warn('[GAS adapter] Non implementato (direct):', prop); };
-        }
-      })
-    }
-  };
-
-  // Auth check
-  if (!localStorage.getItem('comet_token') && !location.pathname.includes('login')) {
-    location.href = '/login.html';
-  }
-
-  // Mostra email utente nella sidebar
-  document.addEventListener('DOMContentLoaded', function() {
-    const email = localStorage.getItem('comet_email') || '';
-    const el = document.getElementById('sb-user-email');
-    if (el) el.textContent = email;
-  });
-
-})();
+﻿(function(){const TOKEN=()=>localStorage.getItem('comet_token')||'';async function callApi(method,path,body){const opts={method,headers:{'Content-Type':'application/json','Authorization':'Bearer '+TOKEN()}};if(body!==undefined)opts.body=JSON.stringify(body);const res=await fetch('/api'+path,opts);if(res.status===401){localStorage.clear();location.href='/login.html';throw new Error('Non autenticato');}return res.json();}async function callGAS(action,payload){return callApi('POST','/gas/'+action,payload||{});}const API_MAP={api_ping:()=>callApi('GET','/ping'),getOperationalData:()=>callApi('GET','/data'),api_getNavi:()=>callGAS('api_getNavi'),api_getConfig:()=>callGAS('api_getConfig'),api_saveConfig:(d)=>callGAS('api_saveConfig',d),api_deleteRow:(d)=>callGAS('api_deleteRow',d),api_cloneRimorchio:(d)=>callGAS('api_cloneRimorchio',d),api_duplicateRow:(d)=>callGAS('api_duplicateRow',d),api_inlineUpdate:(d)=>callGAS('api_inlineUpdate',d),api_updateRimorchioFields:(d)=>callGAS('api_updateRimorchioFields',d),api_updateTrailerDates:(d)=>callGAS('api_updateTrailerDates',d),api_updateCell:(d)=>callGAS('api_updateCell',d),api_setTrailerCargoManual:(d)=>callGAS('api_setTrailerCargoManual',d),api_startTrip:(d)=>callGAS('api_startTrip',d),api_endTrip:(d)=>callGAS('api_endTrip',d),api_startLayover:(d)=>callGAS('api_startLayover',d),api_endLayover:(d)=>callGAS('api_endLayover',d),api_unloadToWarehouse:(d)=>callGAS('api_unloadToWarehouse',d),api_getDriverRegistry:()=>callGAS('api_getDriverRegistry'),api_upsertDriver:(d)=>callGAS('api_upsertDriver',d),api_deleteDriver:(d)=>callGAS('api_deleteDriver',d),api_assignDriverToTrailer:(d)=>callGAS('api_assignDriverToTrailer',d),api_unassignDriverFromTrailer:(d)=>callGAS('api_unassignDriverFromTrailer',d),api_getDriverActivity:(d)=>callGAS('api_getDriverActivity',d),api_getDriverDashboard:(d)=>callGAS('api_getDriverDashboard',d),api_suggestDriverForTrailer:(d)=>callGAS('api_suggestDriverForTrailer',d),api_addMagazzinoItem:(d)=>callGAS('api_addMagazzinoItem',d),deleteMagazzino:(d)=>callGAS('api_deleteMagazzinoItem',d),deleteNavi:(d)=>callGAS('api_deleteNaveTrip',d),api_deleteNaveTrip:(d)=>callGAS('api_deleteNaveTrip',d),api_savePlanningItem:(d)=>callGAS('api_savePlanningItem',d),deletePlanning:(d)=>callGAS('api_deletePlanningItem',d),api_deletePlanningItem:(d)=>callGAS('api_deletePlanningItem',d),api_addEpalMovement:(d)=>callGAS('api_addEpalMovement',d),api_addLlfMovement:(d)=>callGAS('api_addLlfMovement',d),api_addCvrMovement:(d)=>callGAS('api_addCvrMovement',d),api_getRubricaIndirizzi:()=>callGAS('api_getRubricaIndirizzi'),api_upsertRubricaIndirizzo:(d)=>callGAS('api_upsertRubricaIndirizzo',d),api_deleteRubricaIndirizzo:(d)=>callGAS('api_deleteRubricaIndirizzo',d),api_askGemini:(d)=>callGAS('api_askGemini',d),api_suggestLoadPairings:(d)=>callGAS('api_suggestLoadPairings',d),api_optimizeStopOrder:(d)=>callGAS('api_optimizeStopOrder',d),api_importMassivo:(d)=>callGAS('api_importMassivo',d),api_buildWhatsappMessage:(d)=>callGAS('api_buildWhatsappMessage',d),api_buildWhatsappFromTrailer:(d)=>callGAS('api_buildWhatsappFromTrailer',d),api_getTrailerReport:(d)=>callGAS('api_getTrailerReport',d),api_sendFleetSummaryEmail:()=>callGAS('api_sendFleetSummaryEmail'),api_sendDailyAlertsEmail:()=>callGAS('api_sendDailyAlertsEmail'),api_uploadDdt:(d)=>callGAS('api_uploadDdt',d),api_getDdtList:(d)=>callGAS('api_getDdtList',d),api_deleteDdt:(d)=>callGAS('api_deleteDdt',d)};function createRunner(){let onSuccess=function(){};let onFailure=function(e){console.error('GAS error:',e);};const runner={withSuccessHandler:function(fn){onSuccess=fn||function(){};return runner;},withFailureHandler:function(fn){onFailure=fn||function(){};return runner;}};Object.keys(API_MAP).forEach(function(name){runner[name]=function(arg){Promise.resolve().then(()=>API_MAP[name](arg)).then(r=>{try{onSuccess(r);}catch(e){console.error(e);}}).catch(e=>{try{onFailure(e&&e.message?e.message:String(e));}catch(x){}});};});return runner;}window.google={script:{run:new Proxy({},{get:function(t,prop){if(prop==='withSuccessHandler')return function(fn){return createRunner().withSuccessHandler(fn);};if(prop==='withFailureHandler')return function(fn){return createRunner().withFailureHandler(fn);};if(API_MAP[prop])return function(arg){API_MAP[prop](arg).catch(e=>console.error('[GAS]',prop,e));};return function(arg){console.warn('[GAS] Non implementato:',prop);};}})}}; if(!localStorage.getItem('comet_token')&&!location.pathname.includes('login')){location.href='/login.html';}document.addEventListener('DOMContentLoaded',function(){var el=document.getElementById('sb-user-email');if(el)el.textContent=localStorage.getItem('comet_email')||'';});})();
 
 
 
-/* === PATCH: compatibilità forceHideLoadingOverlay (evita ReferenceError) === */
+/* === PATCH: compatibilitÃ  forceHideLoadingOverlay (evita ReferenceError) === */
 window.forceHideLoadingOverlay = window.forceHideLoadingOverlay || function(){
   try{
     var el = document.getElementById('loading-overlay');
@@ -325,13 +149,13 @@ $('#form-new-rimorchio').on('submit', this.handleNewRimorchio.bind(this));
   _refreshPending: false,
 
   refreshData: function() {
-    // 1) Ri-renderizza SUBITO con i dati già in memoria (risposta istantanea)
+    // 1) Ri-renderizza SUBITO con i dati giÃ  in memoria (risposta istantanea)
     this._renderAll_();
 
     // 2) Debounce: una sola chiamata al server ogni 3s
-    //    (se arrivano più refreshData in rapida successione, ne parte solo una)
+    //    (se arrivano piÃ¹ refreshData in rapida successione, ne parte solo una)
     clearTimeout(this._refreshTimer);
-    if (this._refreshPending) return; // già in volo
+    if (this._refreshPending) return; // giÃ  in volo
     this._refreshTimer = setTimeout(() => {
       this._refreshPending = true;
       google.script.run
@@ -417,7 +241,7 @@ $('#form-new-rimorchio').on('submit', this.handleNewRimorchio.bind(this));
     try { this.initMap(); } catch(e) { console.error('initMap error', e); }
     try { this.initCalendar(); } catch(e) { console.error('initCalendar error', e); }
 
-    // NAVI: render se già presente in data (o se la tab è aperta)
+    // NAVI: render se giÃ  presente in data (o se la tab Ã¨ aperta)
     try { this.renderNavi(); } catch(e) { console.error('renderNavi error', e); }
   },
 
@@ -695,7 +519,7 @@ if (tabName === 'navi') {
           Swal.fire('OK', 'Ordine scarico aggiornato', 'success');
         } else {
     forceHideLoadingOverlay();
-          Swal.fire('Info', 'Non è stato possibile riordinare tutti gli scarichi.', 'info');
+          Swal.fire('Info', 'Non Ã¨ stato possibile riordinare tutti gli scarichi.', 'info');
         }
       })
       .withFailureHandler((e) => {
@@ -966,7 +790,7 @@ const rimorchi = this.data.rimorchi || [];
   deleteMagazzinoItem: function(id, label) {
     Swal.fire({
       title: 'Elimina merce?',
-      html: `<b>${this.escapeHtml(label || id)}</b><br><span class="text-muted small">Questa operazione non può essere annullata.</span>`,
+      html: `<b>${this.escapeHtml(label || id)}</b><br><span class="text-muted small">Questa operazione non puÃ² essere annullata.</span>`,
       icon: 'warning',
       showCancelButton: true,
       confirmButtonColor: '#dc3545',
@@ -1057,9 +881,9 @@ const rimorchi = this.data.rimorchi || [];
     if (sel) {
       const navi = (this.data.navi || []);
       const cur = sel.value || '';
-      sel.innerHTML = '<option value="">— Nessuna —</option>' + navi.map(n => {
+      sel.innerHTML = '<option value="">â€” Nessuna â€”</option>' + navi.map(n => {
         const id = String(n.ID || '');
-        const label = `${id} • ${String(n['Nave/Linea'] || '')} • ${String(n['Porto Partenza'] || '')}→${String(n['Porto Arrivo'] || '')}`;
+        const label = `${id} â€¢ ${String(n['Nave/Linea'] || '')} â€¢ ${String(n['Porto Partenza'] || '')}â†’${String(n['Porto Arrivo'] || '')}`;
         return `<option value="${this.escapeHtml(id)}">${this.escapeHtml(label)}</option>`;
       }).join('');
       sel.value = cur;
@@ -1125,10 +949,10 @@ const rimorchi = this.data.rimorchi || [];
     const matEl = document.getElementById('mz-materiale');
     if (matEl) {
       const hints = {
-        SFUSO:'Es. frumento duro, mais, orzo…',
-        FERRO:'Es. profilati HEA 200, angolari…',
+        SFUSO:'Es. frumento duro, mais, orzoâ€¦',
+        FERRO:'Es. profilati HEA 200, angolariâ€¦',
         LAMIERA:'Es. lamiera S235 spess. 4mm, 12x2m',
-        TUBI:'Es. tubi zincati Ø120 6m',
+        TUBI:'Es. tubi zincati Ã˜120 6m',
         PEDANE:'Es. pedane EUR 120x80 / LLF 120x100',
         BOBINE:'Es. bobine nastro 0,7mm largh. 1250',
         MACCHINARIO:'Es. compressore 5t, gru a torre',
@@ -1141,13 +965,13 @@ const rimorchi = this.data.rimorchi || [];
     const hintEl = document.getElementById('mz-tipo-hint');
     if (hintEl) {
       const campi = {
-        SFUSO:'Solo KG totali — nessuna misura richiesta.',
-        FERRO:'Richiede lunghezza (m) · larghezza · altezza.',
-        LAMIERA:'Richiede lunghezza · larghezza · altezza.',
-        TUBI:'Richiede lunghezza (m) · larghezza · altezza.',
+        SFUSO:'Solo KG totali â€” nessuna misura richiesta.',
+        FERRO:'Richiede lunghezza (m) Â· larghezza Â· altezza.',
+        LAMIERA:'Richiede lunghezza Â· larghezza Â· altezza.',
+        TUBI:'Richiede lunghezza (m) Â· larghezza Â· altezza.',
         PEDANE:'Richiede larghezza e altezza (ingombro piana).',
-        BOBINE:'Richiede diametro Ø (m) e KG.',
-        MACCHINARIO:'Solo KG — inserisci descrizione dettagliata.',
+        BOBINE:'Richiede diametro Ã˜ (m) e KG.',
+        MACCHINARIO:'Solo KG â€” inserisci descrizione dettagliata.',
         ALTRO:'Compila i campi disponibili.'
       };
       hintEl.textContent = campi[tipo] || '';
@@ -1165,7 +989,7 @@ const rimorchi = this.data.rimorchi || [];
     $('#modalMagazzinoAdd').modal('hide');
 
     if (editId) {
-      // ── MODALITÀ MODIFICA: aggiorna tutti i campi via api_updateCell ──
+      // â”€â”€ MODALITÃ€ MODIFICA: aggiorna tutti i campi via api_updateCell â”€â”€
       delete form.dataset.editId;
       const btn = form.querySelector('[type="submit"]');
       if (btn) btn.innerHTML = '<i class="fas fa-save me-1"></i> Salva in Magazzino';
@@ -1175,7 +999,7 @@ const rimorchi = this.data.rimorchi || [];
         'Materiale','KG','Colli',
         'Lunghezza (m)','Larghezza (m)','Altezza (m)','Diametro (m)',
         'Stato','Note','Tratta Nave ID','Data Carico','Data Consegna','Data Tassativa','Tipo Merce'];
-      const meta = { userEmail: (this.state && this.state.userEmail) || '—' };
+      const meta = { userEmail: (this.state && this.state.userEmail) || 'â€”' };
 
       // Chiama updateCell per ogni campo in parallelo, poi refreshData
       let pending = fields.length;
@@ -1204,7 +1028,7 @@ const rimorchi = this.data.rimorchi || [];
           .api_updateCell('MAGAZZINO', editId, f, payload[f] !== undefined ? payload[f] : '', meta);
       });
     } else {
-      // ── MODALITÀ INSERIMENTO ──
+      // â”€â”€ MODALITÃ€ INSERIMENTO â”€â”€
       google.script.run
         .withSuccessHandler((res) => {
           if (res && res.ok) {
@@ -1269,14 +1093,14 @@ renderPlanning: function() {
     if (!el) return;
 
     this.state.map = L.map('map-view').setView([41.9028, 12.4964], 6);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap contributors' }).addTo(this.state.map);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: 'Â© OpenStreetMap contributors' }).addTo(this.state.map);
 
     const rimorchi = this.data.rimorchi || [];
     const rubrica = this.data.rubrica || [];
 
     rimorchi.forEach(r => {
       const posName = r['Posizione Rimorchio'];
-      const location = rubrica.find(l => l.Città === posName || l.Nome === posName);
+      const location = rubrica.find(l => l.CittÃ  === posName || l.Nome === posName);
       if (location && location.Lat && location.Lng) {
         L.marker([Number(location.Lat), Number(location.Lng)])
           .addTo(this.state.map)
@@ -1478,7 +1302,7 @@ rimorchi.forEach(r => {
           const newRim = Object.assign({ Stato:'VUOTO', 'Carico JSON':'[]' }, payload);
           if (this.data && this.data.rimorchi) this.data.rimorchi.push(newRim);
           this._renderAll_();
-          this.toast('Rimorchio creato ✓');
+          this.toast('Rimorchio creato âœ“');
           e.target.reset();
           this.refreshData();
         } else {
@@ -1560,7 +1384,7 @@ rimorchi.forEach(r => {
     });
     this.clearSelection();
     this._renderAll_();
-    this.toast(`Aggiornati ${ids.length} rimorchi ✓`);
+    this.toast(`Aggiornati ${ids.length} rimorchi âœ“`);
     google.script.run
       .withSuccessHandler((res) => {
         forceHideLoadingOverlay();
@@ -1573,7 +1397,7 @@ rimorchi.forEach(r => {
 
   clonaViaggio: function(id) {
     forceHideLoadingOverlay();
-    Swal.fire({ title: 'Clonare viaggio?', showCancelButton: true, confirmButtonText: 'Sì, clona' })
+    Swal.fire({ title: 'Clonare viaggio?', showCancelButton: true, confirmButtonText: 'SÃ¬, clona' })
       .then((result) => {
         if (!result.isConfirmed) return;
         this.showLoading(true);
@@ -1718,7 +1542,7 @@ $('#det-ass').text(r['Scadenza Assicurazione'] ? this.formatDateTime_(r['Scadenz
     }, 350);
 },
 
-  /* Forza il layout corretto del pannello dettagli - CSS table per compatibilità GAS */
+  /* Forza il layout corretto del pannello dettagli - CSS table per compatibilitÃ  GAS */
     /* Forza il layout corretto del pannello dettagli - JS puro, non dipende da CSS */
   _forceDetLayout_: function() {
     try {
@@ -1735,9 +1559,9 @@ $('#det-ass').text(r['Scadenza Assicurazione'] ? this.formatDateTime_(r['Scadenz
     } catch(e) { console.error('_forceDetLayout_', e); }
   },
 
-  /* Inizializza contenuto tab dopo che il modal è visibile */
+  /* Inizializza contenuto tab dopo che il modal Ã¨ visibile */
   _initDetailsModalContent_: function(cargoJson) {
-    // ─── Popola magazzino tab ─────────────────────────────────────────────
+    // â”€â”€â”€ Popola magazzino tab â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const stock = (this.data.magazzino || []).filter(m =>
       !['SPEDITO','CONSEGNATO'].includes(String(m.Stato || '').toUpperCase())
     );
@@ -1763,28 +1587,28 @@ $('#det-ass').text(r['Scadenza Assicurazione'] ? this.formatDateTime_(r['Scadenz
             <input class="form-check-input flex-shrink-0 stock-select" type="checkbox" value="${this.escapeHtml(item.ID)}">
             <span class="badge rounded-pill fw-bold" style="${col};padding:3px 9px;font-size:.7rem">${this.escapeHtml(tipo)}</span>
             <span class="flex-grow-1 min-width-0">
-              <div class="fw-semibold text-truncate" title="${this.escapeHtml(item.Materiale||'')}">${this.escapeHtml(item.Materiale||'—')}</div>
-              <div class="text-muted small">${this.escapeHtml(item.Destinazione||'')}${item.Cliente ? ' · '+this.escapeHtml(item.Cliente) : ''}</div>
+              <div class="fw-semibold text-truncate" title="${this.escapeHtml(item.Materiale||'')}">${this.escapeHtml(item.Materiale||'â€”')}</div>
+              <div class="text-muted small">${this.escapeHtml(item.Destinazione||'')}${item.Cliente ? ' Â· '+this.escapeHtml(item.Cliente) : ''}</div>
             </span>
             <span class="text-end flex-shrink-0">
               <div class="fw-bold small">${item.KG ? Number(item.KG).toLocaleString('it')+' kg' : ''}</div>
-              ${tassStr ? `<span class="badge ${tassUrgente?'bg-danger':'bg-warning text-dark'}" style="font-size:.65rem">⏱ ${tassStr}</span>` : ''}
+              ${tassStr ? `<span class="badge ${tassUrgente?'bg-danger':'bg-warning text-dark'}" style="font-size:.65rem">â± ${tassStr}</span>` : ''}
             </span>
           </label>
         `);
       });
     }
 
-    // ─── Inizializza editor merce ─────────────────────────────────────────
+    // â”€â”€â”€ Inizializza editor merce â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     try { this.initManualTripEditor(cargoJson); } catch(e) { console.error('initManualTripEditor', e); }
 
-    // ─── Resetta sulla tab Merce ──────────────────────────────────────────
+    // â”€â”€â”€ Resetta sulla tab Merce â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const merceTabBtn = document.querySelector('[data-bs-target="#det-tab-merce"]');
     if (merceTabBtn) {
       try { bootstrap.Tab.getOrCreateInstance(merceTabBtn).show(); } catch(_) {}
     }
 
-    // ─── Resetta pairing ──────────────────────────────────────────────────
+    // â”€â”€â”€ Resetta pairing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const pr = document.getElementById('pairing-results');
     if (pr) pr.innerHTML = '<div class="text-muted small text-center py-4"><i class="fas fa-wand-magic-sparkles me-1 text-primary"></i>Clicca "Abbinamenti" per caricare i suggerimenti.</div>';
     const pi = document.getElementById('pairing-trailer-info');
@@ -2084,7 +1908,7 @@ $(document).off('input', '.vm-item-colli').on('input', '.vm-item-colli', (e) => 
   },
 
   applyVmFieldRules_: function() {
-    // Nell'editor unificato i KG sono SEMPRE editabili (non esistono più qty/kg_unit visibili)
+    // Nell'editor unificato i KG sono SEMPRE editabili (non esistono piÃ¹ qty/kg_unit visibili)
     $('#vm-items-body tr').each((i, tr) => {
       const $tr = $(tr);
       const tipo = String($tr.find('.vm-item-tipo, .vue-tipo-select').val() || '').toUpperCase();
@@ -2145,7 +1969,7 @@ $(document).off('input', '.vm-item-colli').on('input', '.vm-item-colli', (e) => 
   },
 
   renumberStops_: function() {
-    // se ordineScarico è vuoto o duplicato, assegna progressivo
+    // se ordineScarico Ã¨ vuoto o duplicato, assegna progressivo
     const used = new Set();
     this.state.vm.stops.forEach((s, i) => {
       let ord = String(s.ordineScarico || '').trim();
@@ -2204,7 +2028,7 @@ $(document).off('input', '.vm-item-colli').on('input', '.vm-item-colli', (e) => 
       navi.forEach(n => {
         const id = String(n.ID || '').trim();
         if (!id) return;
-        const label = `${id} - ${(n['Nave/Linea']||n.Nave||'').toString().trim()} (${(n['Porto Partenza']||'').toString().trim()}→${(n['Porto Arrivo']||'').toString().trim()})`;
+        const label = `${id} - ${(n['Nave/Linea']||n.Nave||'').toString().trim()} (${(n['Porto Partenza']||'').toString().trim()}â†’${(n['Porto Arrivo']||'').toString().trim()})`;
         nsel.append(`<option value="${this.escapeHtml(id)}">${this.escapeHtml(label)}</option>`);
       });
       nsel.val(String(s.naveTripId || ''));
@@ -2234,7 +2058,7 @@ $(document).off('input', '.vm-item-colli').on('input', '.vm-item-colli', (e) => 
         `<option value="${t}"${t === tipoCur ? ' selected' : ''}>${t}</option>`
       ).join('');
 
-      // Mostra Ø solo per bobine, altrimenti L/W/H
+      // Mostra Ã˜ solo per bobine, altrimenti L/W/H
       const isBobine = tipoCur === 'BOBINE';
       const isNew = (!it.descrizione && !it.kg_tot && !it.KG);
 
@@ -2265,7 +2089,7 @@ $(document).off('input', '.vm-item-colli').on('input', '.vm-item-colli', (e) => 
               <input type="number" step="0.01" min="0"
                      class="form-control form-control-sm vue-num-input vm-item-field vm-item-l"
                      data-idx="${idx}" data-field="lunghezza_m"
-                     value="${v(it.lunghezza_m)}" placeholder="—"
+                     value="${v(it.lunghezza_m)}" placeholder="â€”"
                      ${isBobine ? 'disabled' : ''}>
               <span class="vue-unit">m</span>
             </div>
@@ -2277,7 +2101,7 @@ $(document).off('input', '.vm-item-colli').on('input', '.vm-item-colli', (e) => 
               <input type="number" step="0.01" min="0"
                      class="form-control form-control-sm vue-num-input vm-item-field vm-item-w"
                      data-idx="${idx}" data-field="larghezza_m"
-                     value="${v(it.larghezza_m)}" placeholder="—">
+                     value="${v(it.larghezza_m)}" placeholder="â€”">
               <span class="vue-unit">m</span>
             </div>
           </td>
@@ -2288,7 +2112,7 @@ $(document).off('input', '.vm-item-colli').on('input', '.vm-item-colli', (e) => 
               <input type="number" step="0.01" min="0"
                      class="form-control form-control-sm vue-num-input vm-item-field vm-item-h"
                      data-idx="${idx}" data-field="altezza_m"
-                     value="${v(it.altezza_m)}" placeholder="—">
+                     value="${v(it.altezza_m)}" placeholder="â€”">
               <span class="vue-unit">m</span>
             </div>
           </td>
@@ -2320,7 +2144,7 @@ $(document).off('input', '.vm-item-colli').on('input', '.vm-item-colli', (e) => 
             </button>
           </td>
 
-          <!-- Campi nascosti per compatibilità logica esistente -->
+          <!-- Campi nascosti per compatibilitÃ  logica esistente -->
           <td class="d-none">
             <input type="number" step="0.01" class="vm-item-field vm-item-d" data-idx="${idx}" data-field="diametro_m" value="${v(it.diametro_m)}">
           </td>
@@ -2428,21 +2252,21 @@ $(document).off('input', '.vm-item-colli').on('input', '.vm-item-colli', (e) => 
       if (kgTot <= 0) return { ok:false, error:'Inserisci KG tot (>0).' };
     } else if (isLamieraTubi) {
       if (l <= 0) return { ok:false, error:'Per lamiera/tubi/ferro serve la Lunghezza (m) (>0).' };
-      if (qty <= 0) return { ok:false, error:'Per lamiera/tubi/ferro serve la Quantità (>0).' };
-      if (kgUnit <= 0) return { ok:false, error:'Per lamiera/tubi/ferro serve KG/unità (>0).' };
+      if (qty <= 0) return { ok:false, error:'Per lamiera/tubi/ferro serve la QuantitÃ  (>0).' };
+      if (kgUnit <= 0) return { ok:false, error:'Per lamiera/tubi/ferro serve KG/unitÃ  (>0).' };
       kgTot = qty * kgUnit;
     } else if (isPedane) {
-      if (qty <= 0) return { ok:false, error:'Per pedane serve la Quantità (>0).' };
-      if (kgUnit <= 0) return { ok:false, error:'Per pedane serve KG/unità (>0).' };
+      if (qty <= 0) return { ok:false, error:'Per pedane serve la QuantitÃ  (>0).' };
+      if (kgUnit <= 0) return { ok:false, error:'Per pedane serve KG/unitÃ  (>0).' };
       kgTot = qty * kgUnit;
     } else if (isBobine) {
-      if (qty <= 0) return { ok:false, error:'Per bobine serve la Quantità (>0).' };
-      if (kgUnit <= 0) return { ok:false, error:'Per bobine serve KG/unità (>0).' };
+      if (qty <= 0) return { ok:false, error:'Per bobine serve la QuantitÃ  (>0).' };
+      if (kgUnit <= 0) return { ok:false, error:'Per bobine serve KG/unitÃ  (>0).' };
       kgTot = qty * kgUnit;
     } else {
       // Altro: accetta kg_tot oppure qty*kg_unit
       if (kgTot <= 0 && (qty > 0 && kgUnit > 0)) kgTot = qty * kgUnit;
-      if (kgTot <= 0) return { ok:false, error:'Inserisci KG tot, oppure Quantità e KG/unità.' };
+      if (kgTot <= 0) return { ok:false, error:'Inserisci KG tot, oppure QuantitÃ  e KG/unitÃ .' };
     }
 
     const item = {
@@ -2470,8 +2294,8 @@ $(document).off('input', '.vm-item-colli').on('input', '.vm-item-colli', (e) => 
   },
 
   refreshVmComposerUI_: function() {
-    // Composer rimosso — editor ora è la tabella unificata.
-    // Funzione mantenuta per compatibilità con chiamate esistenti.
+    // Composer rimosso â€” editor ora Ã¨ la tabella unificata.
+    // Funzione mantenuta per compatibilitÃ  con chiamate esistenti.
   },
 
 renderVmStopSummary_: function(s) {
@@ -2527,7 +2351,7 @@ renderVmStopSummary_: function(s) {
       if (kgT) parts.push(`Peso: ${kgT} kg`);
     } else if (['LAMIERA','TUBI','FERRO'].includes(tipo)) {
       if (L) parts.push(`L: ${L} m`);
-      if (q) parts.push(`Q.tà: ${q}`);
+      if (q) parts.push(`Q.tÃ : ${q}`);
       if (kgU) parts.push(`KG/unit: ${kgU}`);
     } else if (tipo === 'PEDANE') {
       if (q) parts.push(`Pedane: ${q}`);
@@ -2536,20 +2360,20 @@ renderVmStopSummary_: function(s) {
     } else if (tipo === 'BOBINE') {
       if (q) parts.push(`Bobine: ${q}`);
       if (kgU) parts.push(`KG/bobina: ${kgU}`);
-      if (D) parts.push(`Ø: ${D} m`);
+      if (D) parts.push(`Ã˜: ${D} m`);
       if (W) parts.push(`W: ${W} m`);
     } else if (tipo === 'MACCHINARIO') {
       if (kgT) parts.push(`Peso: ${kgT} kg`);
       const dims = [L?('L '+L):'', W?('W '+W):'', H?('H '+H):''].filter(Boolean).join(' ');
       if (dims) parts.push(`Misure: ${dims}`);
     } else {
-      if (L || W || H || D) parts.push(`Misure: ${[L?('L '+L):'', W?('W '+W):'', H?('H '+H):'', D?('Ø '+D):''].filter(Boolean).join(' ')}`);
-      if (q) parts.push(`Q.tà: ${q}`);
+      if (L || W || H || D) parts.push(`Misure: ${[L?('L '+L):'', W?('W '+W):'', H?('H '+H):'', D?('Ã˜ '+D):''].filter(Boolean).join(' ')}`);
+      if (q) parts.push(`Q.tÃ : ${q}`);
       if (kgU) parts.push(`KG/unit: ${kgU}`);
       if (kgT) parts.push(`KG tot: ${kgT}`);
     }
     if (colli) parts.push(`Colli: ${colli}`);
-    return parts.join(' • ');
+    return parts.join(' â€¢ ');
   },
 
   openVmItemEditor_: function(idx) {
@@ -2578,17 +2402,17 @@ renderVmStopSummary_: function(s) {
           </div>
           <div class="col-12 col-md-8">
             <label class="form-label">Descrizione</label>
-            <input id="vme-desc" class="form-control" value="${this.escapeHtml(String(it.descrizione||''))}" placeholder="Descrizione tecnica (es. lamiera S235, tubo Ø..., bobine..., ecc.)">
+            <input id="vme-desc" class="form-control" value="${this.escapeHtml(String(it.descrizione||''))}" placeholder="Descrizione tecnica (es. lamiera S235, tubo Ã˜..., bobine..., ecc.)">
           </div>
 
           <div class="col-12"><hr class="my-2"></div>
 
           <div class="col-12 col-md-4 vme-group vme-qty">
-            <label class="form-label">Quantità</label>
+            <label class="form-label">QuantitÃ </label>
             <input id="vme-qty" type="number" step="1" min="0" class="form-control" value="${this.escapeHtml(String(it.qty||''))}">
           </div>
           <div class="col-12 col-md-4 vme-group vme-kgunit">
-            <label class="form-label">KG per unità</label>
+            <label class="form-label">KG per unitÃ </label>
             <input id="vme-kgunit" type="number" step="1" min="0" class="form-control" value="${this.escapeHtml(String(it.kg_unit||''))}">
           </div>
           <div class="col-12 col-md-4 vme-group vme-kgtot">
@@ -2609,7 +2433,7 @@ renderVmStopSummary_: function(s) {
             <input id="vme-h" type="number" step="0.01" min="0" class="form-control" value="${this.escapeHtml(String(it.altezza_m||''))}">
           </div>
           <div class="col-12 col-md-3 vme-group vme-d">
-            <label class="form-label">Ø (m)</label>
+            <label class="form-label">Ã˜ (m)</label>
             <input id="vme-d" type="number" step="0.01" min="0" class="form-control" value="${this.escapeHtml(String(it.diametro_m||''))}">
           </div>
 
@@ -2634,7 +2458,7 @@ renderVmStopSummary_: function(s) {
             <input id="vme-addr" class="form-control" value="${this.escapeHtml(String(defaults.indirizzoConsegna||''))}">
           </div>
           <div class="col-12 col-md-5">
-            <label class="form-label">Città</label>
+            <label class="form-label">CittÃ </label>
             <input id="vme-city" class="form-control" value="${this.escapeHtml(String(defaults.cittaConsegna||''))}">
           </div>
           <div class="col-12 col-md-3">
@@ -2731,7 +2555,7 @@ renderVmStopSummary_: function(s) {
         const isBobine = (tU === 'BOBINE');
 
         if (isSfuso && !kg_tot) return Swal.showValidationMessage('Per SFUSO serve il peso (KG totali).');
-        if ((isLamieraTubi || isPedane || isBobine) && (!qty || !kg_unit)) return Swal.showValidationMessage('Per questo tipo servono Quantità e KG/unit.');
+        if ((isLamieraTubi || isPedane || isBobine) && (!qty || !kg_unit)) return Swal.showValidationMessage('Per questo tipo servono QuantitÃ  e KG/unit.');
 
         return { tipo, desc, qty, kg_unit, kg_tot, l, w, h, d, colli, Mittente, Destinatario, indirizzoConsegna, cittaConsegna, provinciaConsegna, telefono };
       }
@@ -2887,7 +2711,7 @@ renderVmStopSummary_: function(s) {
           }
           // Auto-salva nuovi mittenti/destinatari in rubrica (silenziosa)
           this._autoSaveToRubrica_(cargo);
-          this.toast('Carico salvato ✓');
+          this.toast('Carico salvato âœ“');
           try { this.renderRimorchi(); } catch(e) {}
           try { this.renderDashboard(); } catch(e) {}
           // Avvia refresh in background (debounced 3s, non blocca UI)
@@ -2939,7 +2763,7 @@ renderVmStopSummary_: function(s) {
           return `
             <label class="d-block mb-2">
               <input type="checkbox" class="form-check-input me-2 pu-item" value="${id}">
-              <span class="small"><b>Scarico ${ord}</b> ${dest} ${city}${prov ? ' '+prov : ''} — ${desc} (${kg} kg)</span>
+              <span class="small"><b>Scarico ${ord}</b> ${dest} ${city}${prov ? ' '+prov : ''} â€” ${desc} (${kg} kg)</span>
             </label>
           `;
         }).join('')}
@@ -2973,7 +2797,7 @@ renderVmStopSummary_: function(s) {
         rimLocal['Stato'] = cLocal.length ? 'CARICO' : 'VUOTO';
       }
       this._renderAll_();
-      this.toast('Scarico parziale completato ✓');
+      this.toast('Scarico parziale completato âœ“');
       google.script.run
         .withSuccessHandler((r2) => {
           forceHideLoadingOverlay();
@@ -3034,10 +2858,10 @@ renderVmStopSummary_: function(s) {
     forceHideLoadingOverlay();
       Swal.fire({
         title: 'Scarico totale in magazzino?',
-        text: 'Tutta la merce verrà trasferita in magazzino in stato IN_GIACENZA.',
+        text: 'Tutta la merce verrÃ  trasferita in magazzino in stato IN_GIACENZA.',
         icon: 'warning',
         showCancelButton: true,
-        confirmButtonText: 'Sì, trasferisci'
+        confirmButtonText: 'SÃ¬, trasferisci'
       }).then(res => {
         if (!res.isConfirmed) return;
         this.showLoading(true);
@@ -3098,10 +2922,10 @@ scaricaTutto: function() {
     forceHideLoadingOverlay();
     Swal.fire({
       title: 'Scaricare tutto?',
-      text: 'La merce verrà rimossa dal rimorchio.',
+      text: 'La merce verrÃ  rimossa dal rimorchio.',
       icon: 'warning',
       showCancelButton: true,
-      confirmButtonText: 'Sì, scarica'
+      confirmButtonText: 'SÃ¬, scarica'
     }).then((res) => {
       if (!res.isConfirmed) return;
       this.showLoading(true);
@@ -3109,7 +2933,7 @@ scaricaTutto: function() {
       this._patchRimorchio_(targa, { 'Carico JSON': '[]', 'Stato': 'VUOTO', 'Consegna Tassativa': '' });
       this._renderAll_();
       $('#modalDetails').modal('hide');
-      this.toast('Rimorchio svuotato ✓');
+      this.toast('Rimorchio svuotato âœ“');
       google.script.run
         .withSuccessHandler((r) => {
           forceHideLoadingOverlay();
@@ -3123,7 +2947,7 @@ scaricaTutto: function() {
     });
   },
 
-// ── Assegnazione autista inline ─────────────────────────────────────
+// â”€â”€ Assegnazione autista inline â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   detInlineAssignDriver: function() {
     const targa = this.state.currentTrailer;
     if (!targa) return;
@@ -3139,7 +2963,7 @@ scaricaTutto: function() {
     const elMap = { CARICO: 'det-a-carico', GIACENZA: 'det-a-giacenza', SCARICO: 'det-a-scarico' };
     const el = document.getElementById(elMap[ruolo]);
     if (el) el.textContent = autista;
-    this.toast('Autista assegnato ✓');
+    this.toast('Autista assegnato âœ“');
     google.script.run
       .withSuccessHandler((res) => {
         if (!res || !res.ok) {
@@ -3151,7 +2975,7 @@ scaricaTutto: function() {
       .api_assignDriverToTrailer(targa, ruolo, autista);
   },
 
-  // ── Salvataggio date inline ───────────────────────────────────────────
+  // â”€â”€ Salvataggio date inline â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   detInlineSaveDates: function() {
     const targa = this.state.currentTrailer;
     if (!targa) return;
@@ -3165,7 +2989,7 @@ scaricaTutto: function() {
       .withSuccessHandler((r2) => {
         if (r2 && r2.ok) {
           const msgEl = document.getElementById('det-inline-dates-msg');
-          if (msgEl) { msgEl.textContent = '✓ Date salvate'; msgEl.style.display = 'block'; setTimeout(function(){ msgEl.style.display = 'none'; }, 3000); }
+          if (msgEl) { msgEl.textContent = 'âœ“ Date salvate'; msgEl.style.display = 'block'; setTimeout(function(){ msgEl.style.display = 'none'; }, 3000); }
           this.refreshData();
         } else {
           if(window.Swal) Swal.fire('Errore', (r2 && r2.error) ? r2.error : 'Errore sconosciuto', 'error');
@@ -3342,7 +3166,7 @@ scaricaTutto: function() {
     const sorted = [...epal].sort((a, b) => new Date(b.Data) - new Date(a.Data));
 
     sorted.forEach(e => {
-      const q = Number(e['Quantità'] || 0);
+      const q = Number(e['QuantitÃ '] || 0);
       const place = e.Luogo || 'Unknown';
 
       if (!balances[place]) balances[place] = 0;
@@ -3356,7 +3180,7 @@ scaricaTutto: function() {
           <td><span class="badge bg-info text-dark">${this.escapeHtml(e['Operazione'] || '')}</span></td>
           <td><span class="badge bg-secondary">${this.escapeHtml(e['Tipo Movimento'] || '')}</span></td>
           <td>${this.escapeHtml(e.Luogo || '')}</td>
-          <td>${this.escapeHtml(e['Quantità'] || '')}</td>
+          <td>${this.escapeHtml(e['QuantitÃ '] || '')}</td>
           <td>${this.escapeHtml(e['Autista_Targa'] || '')}</td>
           <td class="text-muted small">${this.escapeHtml(e.Note || '')}</td>
         </tr>
@@ -3421,10 +3245,10 @@ scaricaTutto: function() {
     const steps = [
       { title: '1) Dashboard', text: 'Usa KPI e Raggruppamenti per filtrare rapidamente i rimorchi.' },
       { title: '2) Rimorchio', text: 'Apri Dettagli rimorchio per vedere carico, WhatsApp, scadenze e avviare viaggio.' },
-      { title: '3) Avvia viaggio', text: 'Premi “Inizio viaggio” e imposta data/ora (anche nel passato) e dati trasporto.' },
-      { title: '4) Carico/Abbinamento', text: 'Compila “Viaggio Manuale” oppure usa “Suggerimenti” per abbinare il carico.' },
-      { title: '5) Ordine scarico', text: 'Se hai più consegne, usa “Ottimizza ordine scarico”.' },
-      { title: '6) Scarico', text: 'Usa Scarico parziale/totale; se metti in attesa abbinamento usa “Scarico Magazzino”.' },
+      { title: '3) Avvia viaggio', text: 'Premi â€œInizio viaggioâ€ e imposta data/ora (anche nel passato) e dati trasporto.' },
+      { title: '4) Carico/Abbinamento', text: 'Compila â€œViaggio Manualeâ€ oppure usa â€œSuggerimentiâ€ per abbinare il carico.' },
+      { title: '5) Ordine scarico', text: 'Se hai piÃ¹ consegne, usa â€œOttimizza ordine scaricoâ€.' },
+      { title: '6) Scarico', text: 'Usa Scarico parziale/totale; se metti in attesa abbinamento usa â€œScarico Magazzinoâ€.' },
       { title: '7) Alert', text: 'Controlla alert per tassative, porto, scadenze e giacenze magazzino (email quotidiana).' }
     ];
     let p = Promise.resolve();
@@ -3445,7 +3269,7 @@ scaricaTutto: function() {
     }
 
     $('#ai-trailer-targa').text(targa);
-    $('#ai-results').html('<div class="text-center p-3"><div class="spinner-border"></div><p>Analisi compatibilità...</p></div>');
+    $('#ai-results').html('<div class="text-center p-3"><div class="spinner-border"></div><p>Analisi compatibilitÃ ...</p></div>');
     $('#modalAi').modal('show');
 
     google.script.run
@@ -3492,7 +3316,7 @@ scaricaTutto: function() {
       return;
     }
 
-    container.innerHTML = '<div class="text-center py-3"><div class="spinner-border spinner-border-sm text-primary me-2"></div><span class="small text-muted">Analisi compatibilità in corso...</span></div>';
+    container.innerHTML = '<div class="text-center py-3"><div class="spinner-border spinner-border-sm text-primary me-2"></div><span class="small text-muted">Analisi compatibilitÃ  in corso...</span></div>';
     if (infoEl) infoEl.innerHTML = '';
 
     const btnRefresh = document.getElementById('btn-refresh-pairings');
@@ -3515,7 +3339,7 @@ scaricaTutto: function() {
           infoEl.innerHTML = `
             <span class="ptr-pill">Max ${(p.maxWeight || 0).toLocaleString('it')} kg</span>
             <span class="ptr-pill${warnClass}">Residuo: <b>${(p.remainingKg || 0).toLocaleString('it')} kg</b> (${remKgPct}%)</span>
-            <span class="ptr-pill">L max ${p.maxLen || '—'} m</span>
+            <span class="ptr-pill">L max ${p.maxLen || 'â€”'} m</span>
             ${p.isCassonato ? '<span class="ptr-pill" style="background:#dcfce7;color:#14532d;border-color:#86efac">Cassonato</span>' : ''}
           `;
         }
@@ -3533,7 +3357,7 @@ scaricaTutto: function() {
           const kg = Number(item.KG || item.kg || 0);
           const dest = String(item.Destinazione || '').trim();
           const cliente = String(item.Cliente || '').trim();
-          const materiale = String(item.Materiale || '—').trim();
+          const materiale = String(item.Materiale || 'â€”').trim();
           const tipoMerce = String(item['Tipo Merce'] || item.TipoMerce || '').trim();
           const nave = String(item['Tratta Nave ID'] || '').trim();
           const stato = String(item.Stato || '').trim();
@@ -3550,7 +3374,7 @@ scaricaTutto: function() {
             }
           }
 
-          // Classe priorità per bordo sinistro
+          // Classe prioritÃ  per bordo sinistro
           const pctIdx = idx / n;
           const prioClass = pctIdx < 0.33 ? 'pairing-top' : pctIdx < 0.66 ? 'pairing-mid' : 'pairing-low';
 
@@ -3563,13 +3387,13 @@ scaricaTutto: function() {
             <div class="pairing-body">
               <div class="pairing-title">${this.escapeHtml(materiale)}</div>
               <div class="pairing-meta">
-                ${cliente ? `<b>${this.escapeHtml(cliente)}</b> → ` : ''}${this.escapeHtml(dest || '—')}
+                ${cliente ? `<b>${this.escapeHtml(cliente)}</b> â†’ ` : ''}${this.escapeHtml(dest || 'â€”')}
                 ${stato ? `<span class="ms-2 badge bg-secondary" style="font-size:.68rem">${this.escapeHtml(stato)}</span>` : ''}
               </div>
               <div class="pairing-pills mt-1">
                 ${kg ? `<span class="pairing-pill pp-kg">${kg.toLocaleString('it')} kg</span>` : ''}
                 ${tipoMerce ? `<span class="pairing-pill pp-tipo">${this.escapeHtml(tipoMerce)}</span>` : ''}
-                ${tassLabel ? `<span class="pairing-pill pp-tass${tassWarn ? ' border-danger' : ''}" title="Data tassativa">${tassWarn ? '⚠ ' : ''}${tassLabel}</span>` : ''}
+                ${tassLabel ? `<span class="pairing-pill pp-tass${tassWarn ? ' border-danger' : ''}" title="Data tassativa">${tassWarn ? 'âš  ' : ''}${tassLabel}</span>` : ''}
                 ${dest ? `<span class="pairing-pill pp-dest">${this.escapeHtml(dest)}</span>` : ''}
                 ${lenVal ? `<span class="pairing-pill">L ${lenVal} m</span>` : ''}
                 ${nave ? `<span class="pairing-pill">Nave: ${this.escapeHtml(nave)}</span>` : ''}
@@ -3666,9 +3490,9 @@ scaricaTutto: function() {
   },
 
   /* ======================= BOLLE DI TRASPORTO (DDT) - upload foto/PDF ======================= */
-  // Funzionalità AGGIUNTIVA: carica su Drive foto o PDF della bolla di trasporto
+  // FunzionalitÃ  AGGIUNTIVA: carica su Drive foto o PDF della bolla di trasporto
   // per il rimorchio corrente. Non sostituisce in alcun modo printDdt() / il
-  // resoconto di carico esistente: è un archivio documentale parallelo.
+  // resoconto di carico esistente: Ã¨ un archivio documentale parallelo.
 
   loadDdtList: function() {
     const targa = this.state.currentTrailer;
@@ -3786,7 +3610,7 @@ scaricaTutto: function() {
     if (!fileId) return;
     Swal.fire({
       title: 'Eliminare il documento?',
-      text: 'Il file verrà spostato nel cestino di Google Drive.',
+      text: 'Il file verrÃ  spostato nel cestino di Google Drive.',
       icon: 'warning',
       showCancelButton: true,
       confirmButtonText: 'Elimina',
@@ -3864,7 +3688,7 @@ scaricaTutto: function() {
         <div class="swal2-form-row">
           <label class="swal2-inline">
             <input id="st-tass-check" type="checkbox">
-            <span>Tassatività</span>
+            <span>TassativitÃ </span>
           </label>
           <input id="st-tass-date" type="datetime-local" class="swal2-input" placeholder="Data tassativa (opz.)" value="" disabled>
         </div>
@@ -4306,7 +4130,7 @@ Swal.fire({
 
     const html = `
       <div class="text-start">
-        <label class="form-label">Modalità</label>
+        <label class="form-label">ModalitÃ </label>
         <select id="wa-mode" class="swal2-input">
           <option value="AUTO">AUTO (da Carico JSON)</option>
           <option value="MANUALE">MANUALE</option>
@@ -4318,7 +4142,7 @@ Swal.fire({
           <label class="form-label">Destinatario</label>
           <input id="wa-dest" class="swal2-input" placeholder="Destinatario" value="">
           <label class="form-label">Indirizzo scarico (via)</label>
-          <input id="wa-addr" class="swal2-input" placeholder="Via / Civico / Città" value="">
+          <input id="wa-addr" class="swal2-input" placeholder="Via / Civico / CittÃ " value="">
           <label class="form-label">Peso (quintali)</label>
           <input id="wa-q" class="swal2-input" placeholder="Es. 320" value="" type="number" step="0.1">
         </div>
@@ -4468,7 +4292,7 @@ Swal.fire({
   },
 
   autistaNorm_: function(trattore, rimorchio) {
-    // 1) Priorità: autista assegnato direttamente al rimorchio (Carico > Giacenza > Scarico)
+    // 1) PrioritÃ : autista assegnato direttamente al rimorchio (Carico > Giacenza > Scarico)
     if (rimorchio) {
       const direct = String(
         rimorchio['Autista Carico'] || rimorchio['Autista Giacenza'] || rimorchio['Autista Scarico'] || ''
@@ -4522,7 +4346,7 @@ escapeHtml: function(str) {
     const lower = s.toLowerCase();
     if (s.length > 80 && bad.some(x => lower.includes(String(x).toLowerCase()))) return fb;
     // limita lunghezze anomale (es. paste accidentale)
-    if (s.length > 220) return s.slice(0, 220) + '…';
+    if (s.length > 220) return s.slice(0, 220) + 'â€¦';
     return s;
   },
 
@@ -4665,7 +4489,7 @@ if (!targa) { Swal.fire('Info','Seleziona un rimorchio','info'); return; }
         <td><span class="badge bg-info text-dark">${this.escapeHtml(e['Operazione']||'')}</span></td>
         <td><span class="badge bg-secondary">${this.escapeHtml(e['Tipo Movimento']||'')}</span></td>
         <td>${this.escapeHtml(e.Luogo||'')}</td>
-        <td>${this.escapeHtml(String(e['Quantità']||''))}</td>
+        <td>${this.escapeHtml(String(e['QuantitÃ ']||''))}</td>
         <td>${this.escapeHtml(e['Autista_Targa']||'')}</td>
         <td class="text-muted small">${this.escapeHtml(e.Dettagli||e.Note||'')}</td>
       </tr>`);
@@ -4693,7 +4517,7 @@ if (!targa) { Swal.fire('Info','Seleziona un rimorchio','info'); return; }
       const tm = String(payload['Tipo Movimento']||'').toUpperCase();
       payload['Operazione'] = (['ENTRATA','DEPOSITO','RITIRO'].includes(tm)) ? 'CARICATO' : 'SCARICATO';
     }
-    if (payload['Quantità'] != null) payload['Quantità'] = Number(payload['Quantità'] || 0);
+    if (payload['QuantitÃ '] != null) payload['QuantitÃ '] = Number(payload['QuantitÃ '] || 0);
 
     const call = (type === 'LFF') ? 'api_addLffMovement' : (type === 'CVR' ? 'api_addCvrMovement' : 'api_addEpalMovement');
     $('#modalEpal').modal('hide');
@@ -4748,7 +4572,7 @@ if (!targa) { Swal.fire('Info','Seleziona un rimorchio','info'); return; }
     const navi = this.data.navi || [];
     navi.forEach(n=>{
       const id = n.ID || '';
-      const label = `${id} - ${(n['Nave/Linea']||'')} (${(n['Porto Partenza']||'')}→${(n['Porto Arrivo']||'')})`;
+      const label = `${id} - ${(n['Nave/Linea']||'')} (${(n['Porto Partenza']||'')}â†’${(n['Porto Arrivo']||'')})`;
       const opt = document.createElement('option');
       opt.value = id;
       opt.textContent = label;
@@ -4810,8 +4634,8 @@ if (!targa) { Swal.fire('Info','Seleziona un rimorchio','info'); return; }
       });
   },
   duplicatePlanning: function(id) {
-    const meta = { userEmail: S.userEmail || "—", src: "inline-ui" };
-    this.toast('Duplicazione in corso…');
+    const meta = { userEmail: S.userEmail || "â€”", src: "inline-ui" };
+    this.toast('Duplicazione in corsoâ€¦');
     google.script.run
       .withSuccessHandler((res) => {
         if (!res || !res.ok) { this.toast((res && res.error) || 'Errore duplicazione', true); return; }
@@ -4892,8 +4716,8 @@ if (!targa) { Swal.fire('Info','Seleziona un rimorchio','info'); return; }
   },
 
   duplicateMagazzino: function(id) {
-    const meta = { userEmail: S.userEmail || "—", src: "inline-ui" };
-    this.toast('Duplicazione in corso…');
+    const meta = { userEmail: S.userEmail || "â€”", src: "inline-ui" };
+    this.toast('Duplicazione in corsoâ€¦');
     google.script.run
       .withSuccessHandler((res) => {
         if (!res || !res.ok) { this.toast((res && res.error) || 'Errore duplicazione', true); return; }
@@ -4944,7 +4768,7 @@ if (!targa) { Swal.fire('Info','Seleziona un rimorchio','info'); return; }
         <div class="col-12 col-md-2">
           <label class="form-label mb-0 small">Tipo Movimento</label>
           <select class="form-select form-select-sm" name="Tipo Movimento" required>
-            <option value="">Seleziona…</option>
+            <option value="">Selezionaâ€¦</option>
             <option value="ENTRATA">ENTRATA</option>
             <option value="USCITA">USCITA</option>
             <option value="DEPOSITO">DEPOSITO</option>
@@ -4957,8 +4781,8 @@ if (!targa) { Swal.fire('Info','Seleziona un rimorchio','info'); return; }
           <input class="form-control form-control-sm" type="text" name="Luogo" placeholder="Es. CVT / Porto / Cliente" required>
         </div>
         <div class="col-12 col-md-2">
-          <label class="form-label mb-0 small">Quantità</label>
-          <input class="form-control form-control-sm" type="number" name="Quantità" step="1" min="0" value="0" required>
+          <label class="form-label mb-0 small">QuantitÃ </label>
+          <input class="form-control form-control-sm" type="number" name="QuantitÃ " step="1" min="0" value="0" required>
         </div>
         <div class="col-12 col-md-2">
           <label class="form-label mb-0 small">Operatore</label>
@@ -4986,7 +4810,7 @@ if (!targa) { Swal.fire('Info','Seleziona un rimorchio','info'); return; }
       fd.forEach((v,k)=> payload[k] = v);
 
       // Normalizza
-      if (payload['Quantità'] != null) payload['Quantità'] = Number(payload['Quantità'] || 0);
+      if (payload['QuantitÃ '] != null) payload['QuantitÃ '] = Number(payload['QuantitÃ '] || 0);
       // Operazione derivata (coerente con la modale)
       const tm = String(payload['Tipo Movimento']||'').toUpperCase();
       payload['Operazione'] = (['ENTRATA','DEPOSITO','RITIRO'].includes(tm)) ? 'CARICATO' : 'SCARICATO';
@@ -5007,14 +4831,14 @@ if (!targa) { Swal.fire('Info','Seleziona un rimorchio','info'); return; }
     });
   },
 
-  // Alias di compatibilità (alcune versioni chiamano refreshPalletLedger)
+  // Alias di compatibilitÃ  (alcune versioni chiamano refreshPalletLedger)
   refreshPalletLedger: function(type){
     return this.refreshPalletData(type);
   },
 
 });
 
-// legacy global wrappers (diagnostica / compatibilità)
+// legacy global wrappers (diagnostica / compatibilitÃ )
 try{
 window.showDashboard = function(){ return window.app && window.app.showTab ? window.app.showTab('dashboard') : null; };
   window.showTrailerManagement = function(){ return window.app && window.app.showTab ? window.app.showTab('rimorchi') : null; };
@@ -5045,7 +4869,7 @@ window.showDashboard = function(){ return window.app && window.app.showTab ? win
             Operazione: fd.get('Operazione')||fd.get('Tipo Movimento')||'CARICATO',
             'Tipo Movimento': fd.get('Tipo Movimento')||'DEPOSITO',
             Luogo: fd.get('Luogo')||'',
-            'Quantità': fd.get('Quantità')||'0',
+            'QuantitÃ ': fd.get('QuantitÃ ')||'0',
             Operatore: fd.get('Autista_Targa')||fd.get('Operatore')||'',
             Note: fd.get('Note')||''
           };
@@ -5077,7 +4901,7 @@ window.showDashboard = function(){ return window.app && window.app.showTab ? win
 
   
   // -----------------------------
-  // Compatibilità: alias per chiamate legacy da INDEX (evita "is not a function")
+  // CompatibilitÃ : alias per chiamate legacy da INDEX (evita "is not a function")
   // -----------------------------
   try{
     if(window.app && typeof window.app === 'object'){
@@ -5283,7 +5107,7 @@ if (missing.length) console.warn('app: missing functions patched with stubs:', m
 
 
 
-/* ===== AUTISTI_UNIFIED_V26 — blocco unico, tutti i precedenti sostituiti ===== */
+/* ===== AUTISTI_UNIFIED_V26 â€” blocco unico, tutti i precedenti sostituiti ===== */
 (function(){
   try{
     if(!window.app) return;
@@ -5294,7 +5118,7 @@ if (missing.length) console.warn('app: missing functions patched with stubs:', m
     function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,function(m){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m];}); }
     function todayStr(){ return new Date().toISOString().slice(0,10); }
     function daysAgoStr(n){ var d=new Date(); d.setDate(d.getDate()-n); return d.toISOString().slice(0,10); }
-    function setText(id,v){ var el=q(id); if(el) el.textContent=(v==null||v===""?"—":String(v)); }
+    function setText(id,v){ var el=q(id); if(el) el.textContent=(v==null||v===""?"â€”":String(v)); }
 
     /* ---- Cache registro autisti ---- */
     // _driverRegistryCache: { ts, rows:[], labels:[] }
@@ -5336,13 +5160,13 @@ if (missing.length) console.warn('app: missing functions patched with stubs:', m
       });
     }
 
-    /* Carica registro dal server — sempre fresco (force=true bypassa cache) */
+    /* Carica registro dal server â€” sempre fresco (force=true bypassa cache) */
     app.autistiLoadDrivers = function(force){
       return new Promise(function(resolve,reject){
         try{
           var cache = app._driverRegistryCache || (app._driverRegistryCache = {ts:0,rows:[],labels:[]});
           var now = Date.now();
-          // Cache valida 15s (non 30s) — solo per evitare doppio click
+          // Cache valida 15s (non 30s) â€” solo per evitare doppio click
           if(!force && cache.labels.length && (now-cache.ts)<15000){
             fillAllDriverSelects(cache.labels);
             resolve(cache.labels);
@@ -5358,7 +5182,7 @@ if (missing.length) console.warn('app: missing functions patched with stubs:', m
               cache.ts    = Date.now();
               cache.rows  = norm;
               cache.labels= labels;
-              app._driverRegistry = norm; // compatibilità vecchi blocchi
+              app._driverRegistry = norm; // compatibilitÃ  vecchi blocchi
               fillAllDriverSelects(labels);
               renderDriverRegistry(norm);
               resolve(labels);
@@ -5438,7 +5262,7 @@ if (missing.length) console.warn('app: missing functions patched with stubs:', m
     /* Prompt da modal Dettaglio Rimorchio */
     app.promptAssignDriverFromTrailer = function(){
       var ct = app.state && app.state.currentTrailer ? app.state.currentTrailer : null;
-      // currentTrailer è una stringa (targa) — non un oggetto
+      // currentTrailer Ã¨ una stringa (targa) â€” non un oggetto
       var targa = (ct && typeof ct === "string") ? ct.trim() : (ct && (ct.Targa||ct.targa||""));
       if(!targa){
         if(window.Swal) Swal.fire({icon:"warning",title:"Rimorchio non selezionato",text:"Apri prima i dettagli di un rimorchio."});
@@ -5548,7 +5372,7 @@ if (missing.length) console.warn('app: missing functions patched with stubs:', m
     };
 
     /* ---- Tabella assegnazioni (Rimorchi assegnati) ---- */
-    /* Renderizza la tabella usando i dati già presenti in app.data (nessuna chiamata extra al server) */
+    /* Renderizza la tabella usando i dati giÃ  presenti in app.data (nessuna chiamata extra al server) */
     app.autistiRefreshAssignments = function(){
       try{
         var body = q("table-autista-assignments") ? q("table-autista-assignments").querySelector("tbody") : null;
@@ -5568,7 +5392,7 @@ if (missing.length) console.warn('app: missing functions patched with stubs:', m
       return Promise.resolve();
     };
 
-    /* ---- Attività autista ---- */
+    /* ---- AttivitÃ  autista ---- */
     app.autistiRefresh = function(){
       var sel = q("sel-autista");
       var name = sel ? String(sel.value||"").trim() : "";
@@ -5644,7 +5468,7 @@ if (missing.length) console.warn('app: missing functions patched with stubs:', m
               setText("aut-kpi-carichi", (res.kpi&&res.kpi.carichi)||0);
               setText("aut-kpi-scarichi",(res.kpi&&res.kpi.scarichi)||0);
               setText("aut-kpi-bancali", (res.kpi&&res.kpi.movBancali)||0);
-              setText("aut-kpi-km",      (res.kpi&&(res.kpi.km==null?"—":res.kpi.km))||"—");
+              setText("aut-kpi-km",      (res.kpi&&(res.kpi.km==null?"â€”":res.kpi.km))||"â€”");
               renderTimeline(res.timeline||[]);
               renderAnomalies(res.anomalie||[]);
             }catch(e){}
@@ -5818,7 +5642,7 @@ if (missing.length) console.warn('app: missing functions patched with stubs:', m
       };
     }
 
-    // Wire immediato (se la view è già visibile al caricamento)
+    // Wire immediato (se la view Ã¨ giÃ  visibile al caricamento)
     try{ wireAutistiUI(); }catch(e){}
 
   }catch(e){ console.error("[AUTISTI_UNIFIED_V26]",e); }
@@ -5826,9 +5650,9 @@ if (missing.length) console.warn('app: missing functions patched with stubs:', m
 
 
 
-// ══════════════════════════════════════════════════════════════
-//  RUBRICA INDIRIZZI — CRUD + AUTOCOMPLETE
-// ══════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+//  RUBRICA INDIRIZZI â€” CRUD + AUTOCOMPLETE
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 (function(){
   const app = window.app;
   if (!app) return;
@@ -5840,7 +5664,7 @@ if (missing.length) console.warn('app: missing functions patched with stubs:', m
   // Normalizza un record dalla rubrica (vecchio o nuovo formato)
   function normalizeRubricaRow_(r) {
     if (!r) return null;
-    // Se ha già il formato nuovo (campo "nome" minuscolo) → ok
+    // Se ha giÃ  il formato nuovo (campo "nome" minuscolo) â†’ ok
     if (r.nome !== undefined) return r;
     // Vecchio formato da getSheetData_ (chiavi = nomi colonne foglio)
     var nome = String(r['Nome']||r['nome']||'').trim();
@@ -5849,7 +5673,7 @@ if (missing.length) console.warn('app: missing functions patched with stubs:', m
       id:        String(r['ID']||r['id']||'').trim() || ('R-'+Math.random().toString(36).slice(2,7)),
       nome,
       indirizzo: String(r['Indirizzo']||r['indirizzo']||'').trim(),
-      citta:     String(r['Città']||r['Citta']||r['citta']||'').trim(),
+      citta:     String(r['CittÃ ']||r['Citta']||r['citta']||'').trim(),
       provincia: String(r['Provincia']||r['provincia']||'').trim(),
       telefono:  String(r['Telefono']||r['telefono']||'').trim(),
       tipo:      String(r['Tipo']||r['tipo']||'Entrambi').trim(),
@@ -5857,9 +5681,9 @@ if (missing.length) console.warn('app: missing functions patched with stubs:', m
     };
   }
 
-  // ── Carica rubrica dal server ──────────────────────────────
+  // â”€â”€ Carica rubrica dal server â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   function loadRubrica_(cb) {
-    // Usa dati già in app.data (caricati all'avvio) se disponibili
+    // Usa dati giÃ  in app.data (caricati all'avvio) se disponibili
     if (!_rubricaLoaded && app.data && app.data.rubrica && app.data.rubrica.length) {
       _rubrica = app.data.rubrica.map(normalizeRubricaRow_).filter(Boolean);
       _rubricaLoaded = true;
@@ -5878,7 +5702,7 @@ if (missing.length) console.warn('app: missing functions patched with stubs:', m
       .api_getRubricaIndirizzi();
   }
 
-  // ── Render tabella ─────────────────────────────────────────
+  // â”€â”€ Render tabella â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   app.renderRubrica = function() {
     const q    = (document.getElementById('rubrica-search') || {}).value || '';
     const tipo = (document.getElementById('rubrica-filter-tipo') || {}).value || '';
@@ -5921,7 +5745,7 @@ if (missing.length) console.warn('app: missing functions patched with stubs:', m
 
   app.filterRubrica = function() { app.renderRubrica(); };
 
-  // ── Apri modal (nuovo o modifica) ─────────────────────────
+  // â”€â”€ Apri modal (nuovo o modifica) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   app.openRubricaModal = function(r) {
     r = r || {};
     document.getElementById('rubrica-modal-title').textContent = r.id ? 'Modifica contatto' : 'Nuovo contatto';
@@ -5937,10 +5761,10 @@ if (missing.length) console.warn('app: missing functions patched with stubs:', m
     m.show();
   };
 
-  // ── Salva contatto ─────────────────────────────────────────
+  // â”€â”€ Salva contatto â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   app.saveRubricaContatto = function() {
     var nome = document.getElementById('rubrica-nome').value.trim();
-    if (!nome) { alert('Il nome è obbligatorio'); return; }
+    if (!nome) { alert('Il nome Ã¨ obbligatorio'); return; }
 
     var entry = {
       id:         document.getElementById('rubrica-edit-id').value.trim(),
@@ -5978,11 +5802,11 @@ if (missing.length) console.warn('app: missing functions patched with stubs:', m
       .api_upsertRubricaIndirizzo(entry);
   };
 
-  // ── Elimina contatto ───────────────────────────────────────
+  // â”€â”€ Elimina contatto â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   app.deleteRubricaContatto = function(id, nome) {
     Swal.fire({
       title: 'Elimina contatto?',
-      html: '<b>' + esc(nome) + '</b> verrà rimossa dalla rubrica.',
+      html: '<b>' + esc(nome) + '</b> verrÃ  rimossa dalla rubrica.',
       icon: 'warning',
       showCancelButton: true,
       confirmButtonText: 'Elimina',
@@ -6003,7 +5827,7 @@ if (missing.length) console.warn('app: missing functions patched with stubs:', m
     });
   };
 
-  // ── AUTOCOMPLETAMENTO mittente / destinatario ──────────────
+  // â”€â”€ AUTOCOMPLETAMENTO mittente / destinatario â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   var _acTimer = null;
 
   app.rubricaAutocomplete = function(input, campo) {
@@ -6016,7 +5840,7 @@ if (missing.length) console.warn('app: missing functions patched with stubs:', m
     if (q.length < 1) { drop.style.display = 'none'; return; }
 
     _acTimer = setTimeout(function() {
-      // Filtra rubrica: per campo mittente mostra Mittente+Entrambi, dest → Destinatario+Entrambi
+      // Filtra rubrica: per campo mittente mostra Mittente+Entrambi, dest â†’ Destinatario+Entrambi
       var tipoFiltro = campo === 'mittente' ? ['Mittente','Entrambi',''] : ['Destinatario','Entrambi',''];
       var matches = _rubrica.filter(function(r) {
         if (!tipoFiltro.includes(r.tipo||'')) return false;
@@ -6060,7 +5884,7 @@ if (missing.length) console.warn('app: missing functions patched with stubs:', m
     var el = document.getElementById(inputId);
     if (el) el.value = r.nome;
 
-    // Per il DESTINATARIO riempi indirizzo/città/prov/tel nel form scarico
+    // Per il DESTINATARIO riempi indirizzo/cittÃ /prov/tel nel form scarico
     if (campo === 'destinatario') {
       var addr  = document.getElementById('vm-indirizzo');
       var citta = document.getElementById('vm-citta');
@@ -6118,7 +5942,7 @@ if (missing.length) console.warn('app: missing functions patched with stubs:', m
     }, delay || 200);
   };
 
-  // ── Autocomplete rubrica per form MAGAZZINO ──────────────────
+  // â”€â”€ Autocomplete rubrica per form MAGAZZINO â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   app.mzRubricaAC = function(input, dropSuffix) {
     clearTimeout(_acTimer);
     var q = input.value.trim().toLowerCase();
@@ -6175,7 +5999,7 @@ if (missing.length) console.warn('app: missing functions patched with stubs:', m
     if (drop) drop.style.display = 'none';
   };
 
-  // ── Precarica rubrica all'avvio: immediata dopo i dati ────
+  // â”€â”€ Precarica rubrica all'avvio: immediata dopo i dati â”€â”€â”€â”€
   // (loadRubrica_ viene anche chiamata da onDataLoaded via app.data.rubrica)
   setTimeout(function() { loadRubrica_(null); }, 100);
 
@@ -6209,6 +6033,7 @@ function clearOmnibar() {
   document.getElementById('comet-copilot-result').innerHTML = '';
   document.getElementById('comet-copilot-badge').innerHTML = '';
 }
+window.clearOmnibar = clearOmnibar;
 
 /* ======================= IMPORTAZIONE MASSIVA ======================= */
 
@@ -6220,6 +6045,7 @@ function importMassivoReset() {
   document.getElementById('imp-preview').classList.add('d-none');
   document.getElementById('imp-result').classList.add('d-none');
 }
+window.importMassivoReset = importMassivoReset;
 
 function _importMassivoShowLoading_() {
   document.getElementById('imp-step1').classList.add('d-none');
@@ -6256,14 +6082,15 @@ function importMassivoPreview() {
     .withFailureHandler((e) => { importMassivoReset(); app.onError(e); })
     .api_importMassivo(txt, opts);
 }
+window.importMassivoPreview = importMassivoPreview;
 
 function importMassivoExecute() {
   const txt = (document.getElementById('imp-textarea').value || '').trim();
   if (!txt) { Swal.fire('Attenzione', 'Incolla prima il testo da importare.', 'warning'); return; }
   Swal.fire({
     title: 'Importa e salva?',
-    html: "I dati estratti dall'AI verranno scritti direttamente nel gestionale.<br><small class='text-muted'>Usa prima 'Anteprima' per verificare cosa verrà importato.</small>",
-    icon: 'question', showCancelButton: true, confirmButtonText: 'Sì, importa', cancelButtonText: 'Annulla'
+    html: "I dati estratti dall\'AI verranno scritti direttamente nel gestionale.<br><small class='text-muted'>Usa prima 'Anteprima' per verificare cosa verra importato.</small>",
+    icon: 'question', showCancelButton: true, confirmButtonText: 'Importa', cancelButtonText: 'Annulla'
   }).then((r) => {
     if (!r.isConfirmed) return;
     _importMassivoShowLoading_();
@@ -6274,6 +6101,7 @@ function importMassivoExecute() {
       .api_importMassivo(txt, opts);
   });
 }
+window.importMassivoExecute = importMassivoExecute;
 
 function importMassivoSave() {
   const txt = (document.getElementById('imp-textarea').value || '').trim();
@@ -6285,6 +6113,7 @@ function importMassivoSave() {
     .withFailureHandler((e) => { importMassivoReset(); app.onError(e); })
     .api_importMassivo(txt, opts);
 }
+window.importMassivoSave = importMassivoSave;
 
 function _handleImportResult_(res) {
   document.getElementById('imp-loading').classList.add('d-none');
@@ -6325,10 +6154,10 @@ function _renderImportPreview_(parsed) {
     html += '<thead class="table-light"><tr><th>Targa</th><th>Stato</th><th>Posizione</th><th>Scarichi</th><th>Autista</th><th>Note</th></tr></thead><tbody>';
     rim.forEach(r => {
       const sc = (r.scarichi||[]).map(s =>
-        eh(s.destinatario||'') + (s.materiale ? ' – '+eh(s.materiale) : '') +
+        eh(s.destinatario||'') + (s.materiale ? ' &ndash; '+eh(s.materiale) : '') +
         (s.dataTassativa ? ` <span class="badge bg-danger">TAX ${eh(s.dataTassativa)}</span>` : '')
       ).join('<br>');
-      html += `<tr><td><strong>${eh(r.targa||'')}</strong></td><td>${eh(r.stato||'')}</td><td>${eh(r.posizione||'')}</td><td>${sc||'—'}</td><td>${eh(r.autista||'—')}</td><td>${eh(r.note||'—')}</td></tr>`;
+      html += `<tr><td><strong>${eh(r.targa||'')}</strong></td><td>${eh(r.stato||'')}</td><td>${eh(r.posizione||'')}</td><td>${sc||'&mdash;'}</td><td>${eh(r.autista||'&mdash;')}</td><td>${eh(r.note||'&mdash;')}</td></tr>`;
     });
     html += '</tbody></table></div>';
   }
@@ -6337,17 +6166,17 @@ function _renderImportPreview_(parsed) {
     html += `<h6 class="fw-bold mt-3"><i class="fas fa-user-tie me-1 text-secondary"></i>Autisti agganciati (${aut.length})</h6>`;
     html += '<div class="table-responsive"><table class="table table-sm table-bordered small">';
     html += '<thead class="table-light"><tr><th>Autista</th><th>Targa</th><th>Note</th></tr></thead><tbody>';
-    aut.forEach(a => { html += `<tr><td>${eh(a.autista||'')}</td><td>${eh(a.targa||'')}</td><td>${eh(a.note||'—')}</td></tr>`; });
+    aut.forEach(a => { html += `<tr><td>${eh(a.autista||'')}</td><td>${eh(a.targa||'')}</td><td>${eh(a.note||'&mdash;')}</td></tr>`; });
     html += '</tbody></table></div>';
   }
 
   if (epal.length) {
     html += `<h6 class="fw-bold mt-3"><i class="fas fa-pallet me-1 text-warning"></i>Movimenti EPAL (${epal.length})</h6>`;
     html += '<div class="table-responsive"><table class="table table-sm table-bordered small">';
-    html += '<thead class="table-light"><tr><th>Qtà</th><th>Tipo</th><th>Luogo</th><th>Autista/Targa</th><th>Data</th><th>Note</th></tr></thead><tbody>';
+    html += '<thead class="table-light"><tr><th>Qt.</th><th>Tipo</th><th>Luogo</th><th>Autista/Targa</th><th>Data</th><th>Note</th></tr></thead><tbody>';
     epal.forEach(e => {
       const badge = e.tipoMovimento === 'RITIRO' ? 'bg-danger' : 'bg-success';
-      html += `<tr><td><strong>${eh(String(e.quantita||''))}</strong></td><td><span class="badge ${badge}">${eh(e.tipoMovimento||'DEPOSITO')}</span></td><td>${eh(e.luogo||'')}</td><td>${eh(e.autistaTarga||'—')}</td><td>${eh(e.data||'—')}</td><td class="text-truncate" style="max-width:180px" title="${eh(e.note||'')}">${eh(e.note||'—')}</td></tr>`;
+      html += `<tr><td><strong>${eh(String(e.quantita||''))}</strong></td><td><span class="badge ${badge}">${eh(e.tipoMovimento||'DEPOSITO')}</span></td><td>${eh(e.luogo||'')}</td><td>${eh(e.autistaTarga||'&mdash;')}</td><td>${eh(e.data||'&mdash;')}</td><td class="text-truncate" style="max-width:180px" title="${eh(e.note||'')}">${eh(e.note||'&mdash;')}</td></tr>`;
     });
     html += '</tbody></table></div>';
   }
@@ -6400,7 +6229,7 @@ function renderCometAiMarkdown_(text) {
 
   lines.forEach(function(line) {
     var trimmed = line.trim();
-    var ulMatch = trimmed.match(/^[-*•]\s+(.*)$/);
+    var ulMatch = trimmed.match(/^[-*]\s+(.*)$/);;
     var olMatch = trimmed.match(/^\d+[.)]\s+(.*)$/);
     var headingMatch = trimmed.match(/^#{1,4}\s+(.*)$/);
 
@@ -6463,7 +6292,7 @@ function submitOmnibarQuery() {
         if (res.action === "WRITE") {
           badgeEl.innerHTML = '<span class="badge bg-success"><i class="fa-solid fa-floppy-disk"></i> Modifica Applicata via ' + res.toolUsed + '</span>';
           
-          // REATTIVITÀ UI LOGISTICA: Ricarica i moduli locali del frontend se aperti
+          // REATTIVITA' UI LOGISTICA: Ricarica i moduli locali del frontend se aperti
           // Controlla se esistono e invoca le tue funzioni globali di refresh dati
           if (typeof app !== 'undefined' && typeof app.loadAllData === 'function') {
              // Se hai una funzione di reload globale o parziale per aggiornare le datatable
@@ -6486,4 +6315,5 @@ function submitOmnibarQuery() {
     })
     .api_askGemini(query);
 }
+window.submitOmnibarQuery = submitOmnibarQuery;
 
